@@ -1,0 +1,137 @@
+"""Elo y otras features de estado que las medias móviles no capturan.
+
+Las ventanas rodantes tienen un problema: **tratan igual a todos los rivales**. Ganarle al
+último con un 2-0 pesa lo mismo que ganarle al primero. El Elo resuelve exactamente eso —
+cada resultado vale según contra quién fue— y por eso es la feature clásica del fútbol.
+
+Todas se calculan de forma secuencial sobre los partidos ya jugados y se tagean con el
+`kickoff_time` del partido que las produjo, para que el `merge_asof` del corte las trate
+igual que a cualquier otra ventana. Nada de esto mira hacia adelante.
+
+Lo que se agrega:
+
+- `elo` — rating Elo, con ventaja de localía y regresión a la media entre temporadas.
+- `elo_dif` — la diferencia entre los dos, que es lo que el Elo realmente predice.
+- `xg_diff_u5` — goles menos xG en los últimos 5. Mide **suerte de definición**, y es
+  fuertemente reversible a la media: un equipo que viene convirtiendo por encima de su xG
+  tiende a bajar. Es información que ni `gf_u5` ni `xg_u5` capturan por separado.
+- `tiros_conc_u5` — tiros que le conceden al equipo. Las ventanas de `tiros` miden lo que
+  el equipo genera; esto mide lo que regala, que es otra cosa.
+- `partidos_14d` — partidos jugados en los últimos 14 días: congestión de calendario.
+- `racha` — puntos de los últimos 3 partidos menos el promedio de la temporada; captura si
+  el equipo está por encima o por debajo de su nivel.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+# Parámetros del Elo. K controla cuánto se mueve el rating por partido: 20 es el valor
+# habitual para fútbol de clubes (más alto lo hace ruidoso, más bajo lo hace lento).
+K = 20.0
+# Ventaja de localía en puntos de Elo. ~65 equivale a la ventaja histórica de la Premier.
+VENTAJA_LOCAL = 65.0
+INICIAL = 1500.0
+# Al empezar una temporada los ratings se acercan a la media: los planteles cambian y el
+# ~40 % de los minutos rota. Sin esto, un equipo descendido arrastraría su rating viejo.
+REGRESION_TEMPORADA = 0.25
+
+
+def _esperado(elo_a: float, elo_b: float) -> float:
+    return 1.0 / (1.0 + 10.0 ** ((elo_b - elo_a) / 400.0))
+
+
+def calcular(largo: pd.DataFrame) -> pd.DataFrame:
+    """Elo por equipo, DESPUÉS de cada partido, tageado con su kickoff.
+
+    Se recorre en orden cronológico, que es la única forma de calcular un Elo. Devuelve el
+    rating posterior a cada partido: el `merge_asof` del corte se encarga de que un partido
+    nunca vea el suyo propio.
+    """
+    partidos = (largo[largo["es_local"]]
+                [["season", "fixture_id", "kickoff_time", "team_short", "rival_short",
+                  "gf", "gc"]]
+                .sort_values("kickoff_time")
+                .reset_index(drop=True))
+
+    rating: dict[str, float] = {}
+    temporada_previa: str | None = None
+    filas = []
+
+    for r in partidos.itertuples(index=False):
+        if r.season != temporada_previa:
+            # Regresión a la media al cambiar de temporada.
+            for eq in rating:
+                rating[eq] += (INICIAL - rating[eq]) * REGRESION_TEMPORADA
+            temporada_previa = r.season
+
+        loc = rating.setdefault(r.team_short, INICIAL)
+        vis = rating.setdefault(r.rival_short, INICIAL)
+
+        esp_loc = _esperado(loc + VENTAJA_LOCAL, vis)
+        real_loc = 1.0 if r.gf > r.gc else (0.5 if r.gf == r.gc else 0.0)
+
+        # El margen de victoria amplifica el ajuste, atenuado por logaritmo para que una
+        # goleada no distorsione el rating.
+        margen = 1.0 + np.log1p(abs(r.gf - r.gc))
+        delta = K * margen * (real_loc - esp_loc)
+
+        rating[r.team_short] = loc + delta
+        rating[r.rival_short] = vis - delta
+
+        for eq in (r.team_short, r.rival_short):
+            filas.append({"season": r.season, "fixture_id": r.fixture_id,
+                          "team_short": eq, "kickoff_time": r.kickoff_time,
+                          "elo": rating[eq]})
+
+    return pd.DataFrame(filas)
+
+
+def extras(largo: pd.DataFrame) -> pd.DataFrame:
+    """Las demás features de estado, calculadas inclusivas y tageadas por kickoff."""
+    d = largo.sort_values(["team_short", "kickoff_time"]).copy()
+
+    # Tiros concedidos: los del rival en ese mismo partido.
+    rival = largo[["season", "fixture_id", "team_short", "tiros", "tiros_arco"]].rename(
+        columns={"team_short": "rival_short", "tiros": "tiros_conc",
+                 "tiros_arco": "tiros_arco_conc"})
+    d = d.merge(rival, on=["season", "fixture_id", "rival_short"], how="left")
+
+    # Sobre/sub-rendimiento respecto del xG: suerte de definición, reversible a la media.
+    d["xg_diff"] = d["gf"] - d["xg"]
+    d["xgc_diff"] = d["gc"] - d["xgc"]
+
+    g = d.groupby("team_short", sort=False)
+    for c in ("tiros_conc", "tiros_arco_conc", "xg_diff", "xgc_diff"):
+        d[f"{c}_u5"] = g[c].transform(lambda s: s.rolling(5, min_periods=1).mean())
+
+    # Congestión de calendario: cuántos partidos jugó en los 14 días previos.
+    d["partidos_14d"] = [
+        int(((d.loc[d["team_short"] == t, "kickoff_time"] > k - pd.Timedelta(days=14))
+             & (d.loc[d["team_short"] == t, "kickoff_time"] <= k)).sum())
+        for t, k in zip(d["team_short"], d["kickoff_time"])
+    ]
+
+    # Racha: puntos de los últimos 3 contra el promedio de lo que va de temporada.
+    d["pts_u3_tmp"] = g["pts"].transform(lambda s: s.rolling(3, min_periods=1).mean())
+    d["pts_exp_tmp"] = (d.groupby(["season", "team_short"], sort=False)["pts"]
+                         .transform(lambda s: s.expanding().mean()))
+    d["racha"] = d["pts_u3_tmp"] - d["pts_exp_tmp"]
+
+    cols = ["tiros_conc_u5", "tiros_arco_conc_u5", "xg_diff_u5", "xgc_diff_u5",
+            "partidos_14d", "racha"]
+    return d[["season", "fixture_id", "team_short", "kickoff_time"] + cols]
+
+
+COLUMNAS = ["elo", "tiros_conc_u5", "tiros_arco_conc_u5", "xg_diff_u5", "xgc_diff_u5",
+            "partidos_14d", "racha"]
+
+
+def construir(largo: pd.DataFrame) -> pd.DataFrame:
+    """Todas las features de este módulo, listas para el `merge_asof`."""
+    e = calcular(largo)
+    x = extras(largo)
+    out = e.merge(x, on=["season", "fixture_id", "team_short", "kickoff_time"],
+                  how="outer", validate="one_to_one")
+    return out.rename(columns={"kickoff_time": "hist_kickoff"})

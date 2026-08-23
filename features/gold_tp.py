@@ -21,7 +21,7 @@ from common.config import CFG, PROJECT_ROOT, utc_stamp
 from common.logging_setup import get_logger, setup
 from common.storage import read_table, write_table
 from eda.baselines import odds_a_probabilidades
-from features import cold_start, h2h, player_agg, spec, team_form as tf
+from features import cold_start, elo, h2h, player_agg, spec, team_form as tf
 from transform import leakage
 
 log = get_logger(__name__)
@@ -112,19 +112,22 @@ def construir() -> pd.DataFrame:
     cols_cmp = [c for c in h_cmp.columns if c not in ("season", "team_short", "hist_kickoff")]
     cols_pln = ["mins_hhi", "continuidad_plantel"]
 
+    h_elo = elo.construir(largo)
+
     bloques = [
         _pegar_bloque(obj_lado, h_gen, ["team_short"], cols_gen, con_kickoff=True),
         _pegar_bloque(obj_lado, h_tmp, ["season", "team_short"], cols_tmp),
         _pegar_bloque(obj_lado, h_cnd, ["team_short", "es_local"], cols_cnd),
         _pegar_bloque(obj_lado, h_cmp, ["season", "team_short"], cols_cmp),
         _pegar_bloque(obj_lado, h_pln, ["team_short"], cols_pln),
+        _pegar_bloque(obj_lado, h_elo, ["team_short"], list(elo.COLUMNAS)),
     ]
     feats = bloques[0]
     for b in bloques[1:]:
         feats = feats.merge(b, on=CLAVE + ["lado"], validate="one_to_one")
 
     feats = feats.rename(columns={"continuidad_plantel": "continuidad_plantel_u5"})
-    cols_lado = (cols_gen + cols_tmp + cols_cnd + cols_cmp
+    cols_lado = (cols_gen + cols_tmp + cols_cnd + cols_cmp + list(elo.COLUMNAS)
                  + ["mins_hhi", "continuidad_plantel_u5", "hist_kickoff"])
 
     # Descanso: días entre el último partido usado y el que se predice. El calendario se

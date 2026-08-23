@@ -31,7 +31,7 @@ from pathlib import Path
 
 from common.config import CFG, PROJECT_ROOT
 
-FEATURE_SET_VERSION = "v1"
+FEATURE_SET_VERSION = "v2"   # v2 agrega Elo y estado del equipo (14 columnas)
 
 LADOS = ("local", "visita")
 
@@ -272,6 +272,35 @@ def _contexto() -> list[Feature]:
     return out
 
 
+ESTADO_POR_LADO = (
+    ("elo", "rating Elo del equipo despues de su ultimo partido antes del corte. K=20, "
+            "ventaja de localia 65 puntos, margen de victoria atenuado por logaritmo, y "
+            "regresion del 25% a la media al cambiar de temporada. Resuelve lo que las "
+            "medias moviles no pueden: ponderar cada resultado segun contra quien fue. "
+            "Validado -- al cierre de 2024-25 da Liverpool/Arsenal/City arriba y "
+            "Southampton/Ipswich/Leicester abajo, que son los tres descendidos"),
+    ("tiros_conc_u5", "tiros que le concedieron al equipo en sus ultimos 5 partidos. Las "
+                      "ventanas de `tiros` miden lo que el equipo genera; esta mide lo "
+                      "que regala, que es informacion distinta"),
+    ("tiros_arco_conc_u5", "tiros al arco concedidos en los ultimos 5"),
+    ("xg_diff_u5", "goles menos xG en los ultimos 5: suerte de definicion. Es fuertemente "
+                   "reversible a la media, asi que un valor alto anticipa una caida. Ni "
+                   "`gf_u5` ni `xg_u5` capturan esto por separado"),
+    ("xgc_diff_u5", "goles recibidos menos xG concedido en los ultimos 5: lo mismo del "
+                    "lado defensivo, incluye el rendimiento del arquero"),
+    ("partidos_14d", "partidos jugados en los 14 dias previos: congestion de calendario"),
+    ("racha", "puntos de los ultimos 3 partidos menos el promedio de lo que va de la "
+              "temporada. Captura si el equipo esta por encima o por debajo de su nivel"),
+)
+
+
+def _estado() -> list[Feature]:
+    """Elo y estado del equipo: 7 x 2 lados = 14."""
+    return [Feature(nombre=f"{lado}_{n}", grupo="Elo y estado", fuente="derivada",
+                    formula=f, lado=lado)
+            for lado in LADOS for n, f in ESTADO_POR_LADO]
+
+
 def _dificultad() -> list[Feature]:
     return [
         Feature("fdr_local", "Dificultad", "fact_fixture",
@@ -285,6 +314,7 @@ def _dificultad() -> list[Feature]:
 DIFERENCIALES = (
     "pts_u5", "gf_u5", "gc_u5", "xg_u5", "xgc_u5", "pts_def_u5", "pts_med_u5",
     "pts_camp", "pos_tabla_camp", "ppp_camp", "dias_descanso", "n_hist",
+    "elo", "racha",
 )
 
 
@@ -301,7 +331,7 @@ def _diferenciales() -> list[Feature]:
 def _build() -> list[Feature]:
     out: list[Feature] = []
     for fn in (_forma, _forma_temp, _forma_cond, _campeonato, _h2h,
-               _continuidad, _contexto, _dificultad, _diferenciales):
+               _continuidad, _estado, _contexto, _dificultad, _diferenciales):
         out.extend(fn())
     nombres = [f.nombre for f in out]
     dupes = {n for n in nombres if nombres.count(n) > 1}

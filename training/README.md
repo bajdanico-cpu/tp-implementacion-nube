@@ -264,6 +264,131 @@ registrado para que un compañero con otra máquina pueda reproducirlo.
 
 ---
 
+## El empate: no es una falla del modelo
+
+La objecion natural al ver la matriz de confusion es "si nunca predice empate, no sirve".
+Vale la pena mirarlo con datos, porque la conclusion es la contraria.
+
+**El mercado de apuestas —casas reales, con plata de verdad— tampoco lo predice nunca:**
+
+| Sobre las 380 fechas del holdout | |
+|---|---|
+| Veces que el empate es el argmax **del mercado** | **0 de 380** |
+| Probabilidad de empate que asigna el mercado | media 0,248, **maximo 0,312** |
+| Partidos donde el mercado le da al empate mas de 1/3 | **0** |
+| Empates que efectivamente ocurrieron | **27,4 %** |
+
+El empate ocurre en uno de cada cuatro partidos pero **nunca es el resultado mas probable**:
+con local ~43 %, visitante ~30 % y empate ~25 %, siempre queda tercero. Un modelo
+perfectamente calibrado tampoco lo pondria de argmax.
+
+O sea: **el argmax es la salida equivocada para este problema**, y el canvas ya lo sabia —
+el bloque 6 decide con probabilidades ("apostamos o no apostamos"), no con la clase ganadora.
+
+Lo que si importa es si la probabilidad del empate esta bien estimada. Medido sobre
+`xgb_gbt`: dice 0,236 en promedio y ocurren 0,274 — la subestima en 3,8 puntos. Y de hecho
+llega a asignarle hasta 0,443 en algunos partidos, **mas que el maximo del mercado (0,312)**.
+
+### Se puede forzar a que prediga empates?
+
+Si, pesando la clase. Y muestra exactamente el canje:
+
+| Peso del empate | Empates predichos | F1 del empate | F1 macro | Accuracy | Log-loss |
+|---|---|---|---|---|---|
+| x1 (base) | 6 | 0,073 | 0,391 | 0,490 | 1,040 |
+| **x1,5** | **42** | **0,192** | **0,422** | 0,482 | **1,038** |
+| x2,5 | 172 | 0,304 | 0,385 | **0,395** | 1,075 |
+
+Con x1,5 se gana F1 macro y hasta un poquito de log-loss, a cambio de menos de un punto de
+accuracy: es un canje razonable si lo que importa es no ignorar una clase entera. Con x2,5
+el modelo se vuelve un predictor de empates y la accuracy se desploma nueve puntos.
+
+---
+
+## Experimentos: que mejora y que no
+
+`python -m training.experiments` corre todas las variantes contra el mismo holdout, con el
+mismo protocolo. Cada una cambia **una** cosa.
+
+### Entrenar mas rondas mejora?
+
+**No.** El early stopping corta en 184-201 rondas de 2.000 y ahi se queda lo que hay:
+
+| Variante | Rondas | Accuracy | Log-loss |
+|---|---|---|---|
+| base (lr 0,03) | 184 | 0,490 | 1,040 |
+| lr 0,01 con hasta 6.000 rondas | 550 | **0,490** | 1,039 |
+| lr 0,10 | 52 | 0,497 | 1,042 |
+| `max_depth=6` en vez de 3 | 123 | 0,479 | 1,048 |
+
+Entrenar tres veces mas lento y tres veces mas rondas llega **exactamente al mismo lugar**.
+Y con arboles mas profundos empeora, que es la confirmacion de que el limite no es
+capacidad del modelo: es cuanta senial hay en 1.140 partidos.
+
+### Conviene sacar del entrenamiento una temporada con datos incompletos?
+
+**Si, y bastante.** Esta fue la mejor idea de toda la ronda. La clave es la separacion:
+esos partidos salen como **objetivo de entrenamiento** pero se conservan como **historia**
+para las ventanas de los partidos posteriores. Las features de Gold se calculan sobre la
+historia completa, asi que filtrar filas del train no les quita nada a las demas.
+
+| Variante | Filas de train | Accuracy | F1 macro | Log-loss |
+|---|---|---|---|---|
+| base | 1.140 | 0,490 | 0,391 | 1,040 |
+| sin las fechas de 2022-23 sin xG | 1.004 | 0,497 | **0,406** | 1,039 |
+| **sin 2022-23 entera** | **760** | **0,505** | 0,399 | **1,034** |
+
+Con **un tercio menos de datos de entrenamiento el modelo es mejor en todo**. La temporada
+2022-23 no solo aporta poco: contamina. Tiene sentido — el 37,9 % de sus partidos no tiene
+xG real, y el futbol de hace tres anios se parece menos al de hoy que el del anio pasado.
+
+### La calibracion por temperatura ayuda?
+
+Marginalmente: T = 1,008 y el log-loss baja de 1,0396 a 1,0350. El modelo ya estaba bien
+calibrado, asi que no hay mucho que arreglar.
+
+> **Un error propio que vale documentar.** La primera corrida daba log-loss 1,205, mucho
+> peor. La causa: la temperatura se ajustaba con el modelo **refiteado**, que ya habia visto
+> la temporada de validacion. Contra predicciones artificialmente buenas, el ajuste elegia
+> un T que *agudizaba* en vez de aplanar. Es un leakage sutil y silencioso: no falla nada,
+> solo empeora el resultado. Se corrigio ajustando T con el modelo previo al refit.
+
+---
+
+## Features nuevas: Elo y estado del equipo
+
+Las ventanas moviles tienen un limite: **tratan igual a todos los rivales**. Ganarle al
+ultimo pesa lo mismo que ganarle al primero. El Elo resuelve exactamente eso.
+
+Se agregaron 14 columnas (`features/elo.py`), 7 por lado:
+
+| Feature | Que aporta que las ventanas no aportan |
+|---|---|
+| `elo` | cada resultado vale segun **contra quien** fue. K=20, ventaja de localia 65, margen de victoria atenuado por logaritmo, regresion del 25 % a la media entre temporadas |
+| `xg_diff_u5` | goles menos xG: **suerte de definicion**, fuertemente reversible a la media. Ni `gf_u5` ni `xg_u5` lo capturan por separado |
+| `xgc_diff_u5` | lo mismo del lado defensivo (incluye rendimiento del arquero) |
+| `tiros_conc_u5` | lo que el equipo **regala**; las ventanas de `tiros` miden lo que genera |
+| `partidos_14d` | congestion de calendario |
+| `racha` | puntos de los ultimos 3 contra el promedio de la temporada: si esta por encima o por debajo de su nivel |
+
+**Validacion del Elo**, sin ajustar nada: al cierre de 2024-25 pone arriba a Liverpool
+(campeon), Arsenal y City; y abajo a Southampton, Ipswich y Leicester — **los tres
+descendidos**.
+
+| Variante | Accuracy | F1 macro | Log-loss |
+|---|---|---|---|
+| base (143 features) | 0,490 | 0,391 | 1,040 |
+| **+ Elo y estado (159)** | **0,497** | 0,396 | **1,033** |
+| + Elo, sin 2022-23 | 0,497 | 0,382 | **1,028** |
+
+La mejora es chica y **cae dentro del intervalo de confianza**, asi que por si sola no es
+concluyente con n=380. Pero es consistente en accuracy y log-loss a la vez, y sobre todo:
+**`dif_elo` paso a ser la feature mas importante del modelo** (ganancia 14,9, por encima de
+`dif_pos_tabla_camp` con 12,2). La combinacion con sacar 2022-23 da log-loss **1,028**, el
+mejor de todo lo probado y ya cerca del mercado (1,012).
+
+---
+
 ## Completo vs podado: 143 features contra 40
 
 El set `podado` no se elige a mano: sale de las importancias de ganancia del set
