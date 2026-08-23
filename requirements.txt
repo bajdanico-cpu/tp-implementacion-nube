@@ -1,0 +1,35 @@
+# Verificado con Python 3.14.3 en Windows (wheels cp314 disponibles para todo).
+
+# --- Datos ---
+pandas==3.0.5
+numpy==2.5.2
+pyarrow==25.0.1          # backend parquet de la capa de storage
+
+# --- Ingesta ---
+requests==2.34.2
+PyYAML==6.0.3
+
+# --- Modelo ---
+scikit-learn==1.9.0
+scipy==1.18.0            # optimizacion (calibracion) y tests estadisticos (McNemar)
+joblib==1.5.3            # persistencia del pipeline de sklearn
+# El canvas del grupo nombra XGBoost y RF. Se elige XGBoost tambien por GPU: el wheel de
+# PyPI trae CUDA de fabrica (verificado: build_info()['USE_CUDA'] is True), mientras que
+# el de LightGBM requiere compilar con OpenCL. XGBoost cubre las dos familias: gradient
+# boosting y random forest (num_parallel_tree).
+xgboost==3.4.1
+
+# --- EDA ---
+matplotlib==3.11.0
+
+# --- Tests ---
+pytest==9.1.1
+
+# --- Serving (fase siguiente) ---
+fastapi==0.141.1
+uvicorn==0.41.0
+
+# --- Cloud (se activan cuando haya proyecto GCP; comentados para no pesar el setup local) ---
+# google-cloud-storage
+# google-cloud-bigquery
+# pandas-gbq

@@ -1,0 +1,136 @@
+# Configuración del pipeline. Todo lo que se toca sin editar código vive acá.
+
+project:
+  name: tp-premier-ml
+  # Target del TP. Los goles se guardan igual en Gold, así que cambiar a "poisson"
+  # no obliga a rehacer la capa de features.
+  target: "1x2"
+
+seasons:
+  # Ventana de datos a INGESTAR (bronze). Formato vaastav: "YYYY-YY".
+  # xG/xA/xGC en FPL sólo existen desde 2022-23 — por eso el corte.
+  ingest_from: "2022-23"
+  current: "2026-27"
+
+  # Ventana de ENTRENAMIENTO. Se puede achicar sin volver a bajar nada.
+  # Si el EDA muestra que 1.520 partidos son pocos, bajar `train_from` implica
+  # re-ingestar (y perder xG en las temporadas viejas).
+  train_from: "2022-23"
+  # Temporada reservada para test temporal. Nunca entra al entrenamiento.
+  holdout: "2025-26"
+
+sources:
+  fpl_api:
+    base_url: "https://fantasy.premierleague.com/api"
+    # La API rechaza requests sin User-Agent de browser.
+    user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+    timeout_s: 30
+    max_retries: 4
+    backoff_base_s: 1.5
+    # Pausa entre llamadas. La API no publica rate limit; somos conservadores.
+    sleep_between_calls_s: 0.5
+
+  vaastav:
+    base_url: "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data"
+    timeout_s: 120
+    # Archivos por temporada. `gws/merged_gw.csv` no existe hasta que se juega la GW1
+    # de esa temporada — su ausencia es estado normal, no error.
+    season_files:
+      - "gws/merged_gw.csv"
+      - "teams.csv"
+      - "players_raw.csv"
+      - "fixtures.csv"
+    global_files:
+      - "master_team_list.csv"
+
+  football_data:
+    # Formato de temporada distinto: 2022-23 -> "2223".
+    base_url: "https://www.football-data.co.uk/mmz4281"
+    division: "E0" # E0 = Premier League
+    timeout_s: 60
+    # Guard crítico: el URL de una temporada que todavía no arrancó redirige (301)
+    # a otra división. Sin esta validación entran datos de National League en silencio.
+    validate_division: true
+
+storage:
+  # "local" hoy; "gcs" / "bigquery" cuando haya proyecto GCP.
+  # La lógica de negocio no cambia: todo el I/O pasa por common/storage.py.
+  backend: "local"
+  root: "data"
+  bronze_dir: "bronze"
+  silver_dir: "silver"
+  gold_dir: "gold"
+  format: "parquet"
+
+  gcp:
+    project_id: null
+    region: "southamerica-east1"
+    bucket: null
+    bq_dataset: null
+
+features:
+  # Ventanas rolling sobre fechas ANTERIORES. Nunca la fecha a predecir.
+  # Van sobre los ULTIMOS N PARTIDOS de cada equipo, no sobre las ultimas N gameweeks:
+  # en 2022-23 la GW7 no existe y hay fechas con 7 partidos y otras con 16.
+  rolling_windows: [3, 5]
+
+  # El xG de FPL viene HARDCODEADO EN CERO en 2022-23 hasta esta gameweek (medido: los
+  # 20 equipos en 0,0 en las GW 1-6 y 8-15; desde la 16, ninguno). No es dato faltante
+  # disfrazado de cero: hay que enmascararlo a NaN o el modelo aprende un artefacto de
+  # calendario. La flag `xg_available` lo deja explicito para el modelo.
+  xg_min_gameweek:
+    "2022-23": 16
+
+  # Corte temporal: toda feature usa solo partidos TERMINADOS antes de este momento.
+  # El ancla es el inicio de la fecha -- min(kickoff) de la gameweek -- asi todos los
+  # partidos de una misma fecha se predicen con la misma informacion. Es el criterio mas
+  # conservador y el que hace que las dobles fechas (85 casos) no filtren.
+  corte: "inicio_de_fecha"
+
+  # Cuantas features conserva el set `podado`, elegidas por importancia de ganancia
+  # sobre el resultado del set `completo`. No se eligen a mano.
+  podado_top_n: 40
+  # Columnas prohibidas por riesgo de leakage. Los tests fallan si aparecen en Gold.
+  banned_columns:
+    # `xP` se scrapea del campo `ep_this` DESPUÉS de que termina la fecha; el propio
+    # repo de vaastav advierte que puede reflejar información post-partido.
+    - "xP"
+    # Resultado del partido a predecir y todo lo que se deriva de él.
+    - "team_h_score"
+    - "team_a_score"
+    - "total_points"
+    - "bps"
+    - "bonus"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s | %(levelname)-7s | %(name)-22s | %(message)s"
+
+training:
+  # "auto" prueba CUDA y cae a CPU si falla; "cuda" explicito LEVANTA si no hay GPU
+  # (explicito es explicito); "cpu" fuerza CPU. Pisable con la variable TP_DEVICE.
+  device: "auto"
+
+  # Temporada reservada para early stopping. Sale del train, NUNCA es el holdout:
+  # usar el holdout para decidir cuando parar es la forma sutil de contaminarlo.
+  valid_season: "2024-25"
+
+  # Semillas que se promedian. Cada fit tarda menos de un segundo y con 380 partidos de
+  # holdout el error estandar ronda +-5 puntos: promediar es reduccion de varianza gratis.
+  n_seeds: 5
+  seed: 42
+
+  promocion:
+    # Fechas de la ventana rodante sobre la que se compara candidato vs produccion.
+    # Con una sola fecha (10 partidos) el error estandar de la accuracy es +-15,7 puntos:
+    # promover ahi seria tirar una moneda.
+    ventana_fechas: 10
+    # Test de McNemar pareado: como ambos modelos predicen los MISMOS partidos, solo
+    # cuentan aquellos donde discrepan. Mucho mas potente que comparar dos accuracies.
+    alpha: 0.05
+
+  apuestas:
+    # Se apuesta solo si el valor esperado supera este umbral.
+    # EV = p * (cuota - 1) - (1 - p)
+    umbral_ev: 0.05
+    stake: "plano"

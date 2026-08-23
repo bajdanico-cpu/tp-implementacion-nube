@@ -1,0 +1,46 @@
+# Datos — nunca al repo (se regeneran con `python -m ingestion.run`)
+data/
+eda/output/
+
+# Entorno
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Credenciales — nunca commitear
+*.json.key
+service-account*.json
+.env
+.env.*
+!.env.example
+
+# Modelos serializados. Los binarios no van al repo, pero SÍ la trazabilidad:
+# metadata.json, metrics.json, importancias y el registro de intentos rechazados son
+# la evidencia de que el ciclo de promoción funciona.
+*.pkl
+*.joblib
+*.parquet
+models/**/*.ubj
+!models/**/metadata.json
+!models/**/metrics.json
+!models/**/PRODUCTION.json
+!models/**/attempts.jsonl
+!models/**/importancias.csv
+
+# Salidas regenerables
+training/output/
+features/output/
+
+# SO / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
