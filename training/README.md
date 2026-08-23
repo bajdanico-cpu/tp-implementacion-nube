@@ -98,6 +98,58 @@ la accuracy simplemente ignorándolo.
 
 ---
 
+## Walk-forward: la simulación del ciclo operativo
+
+38 folds sobre 2025-26. Para cada fecha se reentrena con **todo lo anterior a su corte** y
+se predice esa fecha. No es sólo validación: es el ciclo del bloque 9 corriendo de verdad,
+y de acá sale la serie de predicciones pareadas que alimenta el McNemar.
+
+| Métrica | Valor |
+|---|---|
+| Accuracy media por fecha | **0,499** |
+| Log-loss media | **1,039** |
+| % de fechas que le gana a "siempre local" | **52,6 %** |
+| % de fechas que le gana al prior en log-loss | **65,8 %** |
+| Accuracy media de "siempre local" | 0,430 |
+
+Las dos últimas son las **métricas de creación de valor del bloque 10**: no le hablan al
+modelo, le hablan al usuario.
+
+El walk-forward (0,499) coincide con el holdout (0,492), que es la consistencia que uno
+quiere ver: dos protocolos distintos midiendo lo mismo.
+
+### El ±15,7 puntos, en vivo
+
+La accuracy fecha a fecha del walk-forward salta así:
+
+```
+GW01 0,30   GW02 0,50   GW03 0,60   GW04 0,70   GW05 0,70   GW06 0,10
+```
+
+Con 10 partidos por fecha, eso es exactamente el ruido esperado. **Es la razón de que la
+promoción no se decida sobre una fecha**, y se ve mejor acá que en cualquier argumento.
+
+### Un bug que valió la pena encontrar
+
+La primera corrida del walk-forward dio accuracy media **0,435** y ganaba a "siempre local"
+sólo el 44,7 % de las fechas — muy por debajo del holdout. La causa no era el modelo: cada
+fold entrenaba con `n_estimators=2000` **sin early stopping**, mientras que el camino del
+holdout usaba el `best_iteration` (185). Los dos protocolos estaban midiendo modelos
+distintos, y el del walk-forward estaba masivamente sobreajustado.
+
+| | Con el bug | Corregido |
+|---|---|---|
+| Accuracy media | 0,435 | **0,499** |
+| Log-loss media | 1,171 | **1,039** |
+| % gana a siempre-local | 44,7 % | **52,6 %** |
+| % gana al prior | 31,6 % | **65,8 %** |
+
+Ahora el número de rondas se fija **una vez, fuera del bucle**. Además de ser correcto, es
+lo que haría un reentrenamiento semanal real: se reentrena con los datos nuevos, no se
+re-tunea de cero cada semana.
+
+---
+
 ## La capa de decisión: "apostamos o no apostamos"
 
 Es el bloque 6, y es **el único lugar donde entran las cuotas**. No son features del

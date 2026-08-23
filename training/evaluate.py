@@ -106,15 +106,31 @@ def _baselines(filas: pd.DataFrame) -> dict:
 
 def walk_forward(nombre: str, info, features: list[str] | None = None,
                  gold: pd.DataFrame | None = None,
-                 temporada: str | None = None) -> pd.DataFrame:
+                 temporada: str | None = None,
+                 n_estimators: int | None = None) -> pd.DataFrame:
     """Reentrena fecha a fecha y predice la siguiente. Simula el ciclo del bloque 9.
 
     Para cada gameweek se entrena con **todo lo anterior a su corte** y se predice esa
     fecha. El refit completo por fold es caro conceptualmente pero acá tarda segundos.
+
+    ⚠️ **El número de rondas se fija UNA vez, fuera del bucle.** Si cada fold entrenara con
+    `n_estimators=2000` sin early stopping, el walk-forward mediría un modelo distinto del
+    que se reporta en el holdout —uno mucho más sobreajustado— y la comparación no querría
+    decir nada. Fijarlo también es lo que haría un reentrenamiento semanal real: se
+    reentrena con los datos nuevos, no se re-tunea de cero cada semana.
     """
     gold = dataset.cargar() if gold is None else gold
     features = features or spec.FEATURES
     temporada = temporada or CFG.holdout_season
+
+    if n_estimators is None and nombre == "xgb_gbt":
+        sp = dataset.preparar(gold, features)
+        _, best = entrenar(nombre, sp.X_train, sp.y_train, info,
+                           sp.X_valid, sp.y_valid, n_seeds=1)
+        n_estimators = (best + 1) if best else None
+        log.info("Walk-forward con n_estimators=%s (early stopping temporal)", n_estimators)
+
+    params = {"n_estimators": n_estimators} if n_estimators else None
 
     obj = gold[gold["season"] == temporada].sort_values("corte")
     fechas = obj[["gameweek", "corte"]].drop_duplicates().sort_values("corte")
@@ -128,7 +144,7 @@ def walk_forward(nombre: str, info, features: list[str] | None = None,
 
         X_tr = dataset.matriz(prev, features)
         y_tr = dataset.codificar(prev["target_1x2"])
-        entrenados, _ = entrenar(nombre, X_tr, y_tr, info, n_seeds=1)
+        entrenados, _ = entrenar(nombre, X_tr, y_tr, info, n_seeds=1, params=params)
 
         proba = predecir(entrenados, dataset.matriz(test, features))
         pred = dataset.decodificar(proba.argmax(axis=1))
