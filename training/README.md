@@ -264,6 +264,43 @@ registrado para que un compañero con otra máquina pueda reproducirlo.
 
 ---
 
+## Completo vs podado: 143 features contra 40
+
+El set `podado` no se elige a mano: sale de las importancias de ganancia del set
+`completo`. Sobre el mismo holdout:
+
+| | Accuracy | IC 95 % | F1 macro | Log-loss | ROI |
+|---|---|---|---|---|---|
+| `completo` (143) | **0,492** | [0,442 – 0,542] | 0,398 | **1,046** | −0,017 |
+| `podado` (40) | 0,482 | [0,429 – 0,532] | **0,413** | 1,064 | **+0,014** |
+
+**Con 40 de las 143 features se pierde 1 punto de accuracy** — muy dentro del intervalo de
+confianza, o sea indistinguible. A cambio sube el F1 macro: con menos features el modelo se
+sobreconfía menos y reparte algo más de probabilidad al empate.
+
+Es el argumento para promover `podado` a la `v2` del feature set: mismo rendimiento con un
+cuarto de las columnas, menos superficie de fallo en serving y menos que calcular antes de
+cada deadline. Se deja para la siguiente iteración, con las 143 documentadas.
+
+### El único ROI positivo, y por qué no alcanza para festejar
+
+`podado` es la única configuración con ROI positivo: **+0,014** sobre 391 apuestas. Pero
+hay que decir el error:
+
+```
+ROI      +0,014
+error    ±0,091      (n=391, acierto 0,320, cuota media 3,84)
+IC 95%   [-0,164, +0,192]
+```
+
+**El cero está cómodamente adentro.** Con cuotas medias de 3,84 la varianza por apuesta es
+enorme, y 391 apuestas no alcanzan ni de cerca para distinguir +1,4 % de 0. Reportarlo como
+"el modelo es rentable" sería exactamente el error que el resto del proyecto se ocupa de
+evitar. Lo honesto: **ninguna configuración demostró ser rentable, y el overround del 5,7 %
+sigue siendo la explicación más simple de todos los ROI observados.**
+
+---
+
 ## Qué features pesan
 
 De `training/output/importancias_xgb_gbt.csv`. **142 de 143 features tienen ganancia > 0**,
