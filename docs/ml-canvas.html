@@ -1,0 +1,768 @@
+<title>Canvas 1X2 Premier League</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+
+<style>
+:root {
+  --ground:      #F1F4F0;
+  --surface:     #FBFCFA;
+  --surface-alt: #E9EEE8;
+  --ink:         #151A16;
+  --ink-soft:    #3B443E;
+  --muted:       #5E6862;
+  --rule:        #D3DAD2;
+  --rule-soft:   #E3E8E1;
+
+  --home: #146B4C;
+  --draw: #A06B0F;
+  --away: #2F4B7C;
+
+  --accent:      var(--home);
+  --accent-wash: #DEE9E2;
+  --flag:        #8C2F2A;
+  --flag-wash:   #F3E3E1;
+
+  --shadow: 0 1px 2px rgba(21, 26, 22, .05), 0 6px 18px rgba(21, 26, 22, .04);
+
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body:    "Source Serif 4", Georgia, "Times New Roman", serif;
+  --f-mono:    "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0E1210;
+    --surface:     #161B18;
+    --surface-alt: #1D2420;
+    --ink:         #E7ECE7;
+    --ink-soft:    #C3CCC5;
+    --muted:       #8E9992;
+    --rule:        #29322C;
+    --rule-soft:   #202824;
+
+    --home: #56C295;
+    --draw: #DCA847;
+    --away: #86A8DF;
+
+    --accent:      var(--home);
+    --accent-wash: #163025;
+    --flag:        #E08B84;
+    --flag-wash:   #2E1B1A;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .28);
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0E1210;
+  --surface:     #161B18;
+  --surface-alt: #1D2420;
+  --ink:         #E7ECE7;
+  --ink-soft:    #C3CCC5;
+  --muted:       #8E9992;
+  --rule:        #29322C;
+  --rule-soft:   #202824;
+
+  --home: #56C295;
+  --draw: #DCA847;
+  --away: #86A8DF;
+
+  --accent:      var(--home);
+  --accent-wash: #163025;
+  --flag:        #E08B84;
+  --flag-wash:   #2E1B1A;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .28);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 52px;
+}
+
+/* ---------- masthead ---------- */
+
+.masthead { display: flex; flex-direction: column; gap: 22px; }
+
+.eyebrow {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+
+h1 {
+  font-family: var(--f-display);
+  font-weight: 800;
+  font-size: clamp(2.1rem, 5.4vw, 3.5rem);
+  line-height: 1.02;
+  letter-spacing: -.028em;
+  text-wrap: balance;
+  margin: 0;
+  max-width: 20ch;
+}
+
+.standfirst {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 1.09rem;
+  color: var(--ink-soft);
+}
+
+.masthead-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--f-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.masthead-meta b { color: var(--ink); font-weight: 600; }
+
+/* ---------- target key ---------- */
+
+.target-key {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 28px 40px;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 24px 26px;
+  box-shadow: var(--shadow);
+}
+
+.key-bar { display: flex; height: 42px; border-radius: 2px; overflow: hidden; }
+.key-bar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--f-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.key-bar .k-home { background: var(--home); flex: 44.5; }
+.key-bar .k-draw { background: var(--draw); flex: 24.1; }
+.key-bar .k-away { background: var(--away); flex: 31.4; }
+
+.key-legend { display: flex; flex-direction: column; gap: 7px; }
+.key-legend div { display: flex; align-items: baseline; gap: 10px; font-size: .93rem; }
+.key-legend i {
+  width: 9px; height: 9px; border-radius: 1px; flex: none;
+  transform: translateY(-1px);
+}
+.key-legend .l-home i { background: var(--home); }
+.key-legend .l-draw i { background: var(--draw); }
+.key-legend .l-away i { background: var(--away); }
+.key-legend code {
+  font-family: var(--f-mono); font-size: 12px; font-weight: 600;
+}
+.key-legend .note { color: var(--muted); font-size: .88rem; }
+
+/* ---------- section headers ---------- */
+
+.sec-head { display: flex; flex-direction: column; gap: 6px; margin-bottom: 22px; }
+h2 {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 1.36rem;
+  letter-spacing: -.014em;
+  margin: 0;
+  text-wrap: balance;
+}
+.sec-head p { margin: 0; color: var(--muted); font-size: .95rem; max-width: 68ch; }
+
+/* ---------- canvas grid ---------- */
+
+.canvas {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.block {
+  grid-column: span 4;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 18px 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  box-shadow: var(--shadow);
+}
+.block.wide  { grid-column: span 6; }
+.block.third { grid-column: span 3; }
+.block.full  { grid-column: span 12; }
+
+.block-head { display: flex; align-items: baseline; gap: 10px; }
+.block-num {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  color: var(--accent);
+  flex: none;
+}
+.block h3 {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 1.02rem;
+  letter-spacing: -.012em;
+  margin: 0;
+  line-height: 1.25;
+}
+
+.block p { margin: 0; font-size: .93rem; color: var(--ink-soft); }
+.block ul { margin: 0; padding-left: 1.05em; display: flex; flex-direction: column; gap: 6px; }
+.block li { font-size: .91rem; color: var(--ink-soft); }
+.block strong { color: var(--ink); font-weight: 600; }
+
+.block .lede {
+  font-size: 1rem;
+  color: var(--ink);
+}
+.block .lede em { color: var(--accent); font-style: italic; }
+
+.stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+.chip {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 2px;
+  background: var(--surface-alt);
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.chip.on   { background: var(--accent-wash); color: var(--accent); }
+.chip.warn { background: var(--flag-wash);   color: var(--flag); }
+
+.rule-list { display: flex; flex-direction: column; gap: 8px; }
+.rule-list div {
+  font-size: .88rem;
+  color: var(--ink-soft);
+  padding-left: 14px;
+  border-left: 2px solid var(--rule);
+}
+.rule-list b { color: var(--ink); font-weight: 600; }
+
+/* ---------- tables ---------- */
+
+.scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 3px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: .9rem; }
+caption { text-align: left; padding: 14px 16px 0; color: var(--muted); font-size: .85rem; }
+th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+thead th {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: none; }
+td.num, th.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td b { font-weight: 600; }
+.verdict-yes { color: var(--home); font-weight: 600; }
+.verdict-no  { color: var(--flag); font-weight: 600; }
+.verdict-mid { color: var(--draw); font-weight: 600; }
+
+/* ---------- flag panel ---------- */
+
+.flagbox {
+  background: var(--flag-wash);
+  border: 1px solid var(--flag);
+  border-radius: 3px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.flagbox .eyebrow { color: var(--flag); }
+.flagbox h3 {
+  font-family: var(--f-display); font-weight: 700; font-size: 1.06rem;
+  margin: 0; letter-spacing: -.01em;
+}
+.flagbox p { margin: 0; font-size: .93rem; color: var(--ink-soft); max-width: 76ch; }
+.flagbox code { font-family: var(--f-mono); font-size: .85em; }
+
+/* ---------- diagram ---------- */
+
+.diagram-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 3px; padding: 22px 20px; box-shadow: var(--shadow); }
+svg.cycle { display: block; width: 100%; min-width: 760px; height: auto; }
+svg.cycle .bx      { fill: var(--surface-alt); stroke: var(--rule); stroke-width: 1.2; }
+svg.cycle .bx-key  { fill: var(--accent-wash); stroke: var(--accent); stroke-width: 1.4; }
+svg.cycle .bx-gt   { fill: var(--flag-wash);   stroke: var(--flag);   stroke-width: 1.4; }
+svg.cycle .lbl     { font-family: var(--f-display); font-size: 13px; font-weight: 700; fill: var(--ink); }
+svg.cycle .lbl-sm  { font-family: var(--f-mono); font-size: 10px; font-weight: 600; fill: var(--muted); letter-spacing: .06em; }
+svg.cycle .edge-l  { font-family: var(--f-mono); font-size: 10px; fill: var(--muted); letter-spacing: .04em; }
+svg.cycle .arw     { stroke: var(--ink-soft); stroke-width: 1.4; fill: none; }
+svg.cycle .arw-d   { stroke: var(--accent); stroke-width: 1.4; fill: none; stroke-dasharray: 4 4; }
+
+/* ---------- open items ---------- */
+
+.open-list { display: flex; flex-direction: column; gap: 2px; }
+.open-item {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  align-items: start;
+}
+.open-item:last-child { border-bottom: none; }
+.open-item .n {
+  font-family: var(--f-mono); font-size: 12px; font-weight: 600;
+  color: var(--accent); padding-top: 3px;
+}
+.open-item h4 { font-family: var(--f-display); font-weight: 600; font-size: .99rem; margin: 0 0 4px; }
+.open-item p { margin: 0; font-size: .92rem; color: var(--ink-soft); max-width: 78ch; }
+.open-item code { font-family: var(--f-mono); font-size: .85em; }
+
+footer {
+  border-top: 1px solid var(--rule);
+  padding-top: 20px;
+  font-family: var(--f-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 26px;
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 900px) {
+  .block, .block.wide, .block.third, .block.full { grid-column: span 12; }
+  .target-key { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">ITBA · CD.18 Implementación de Aplicaciones de ML en la Nube · Clase 2</p>
+    <h1>ML Canvas: predicción 1X2 de la Premier League</h1>
+    <p class="standfirst">
+      Los diez bloques de Dorard aplicados a un caso con una propiedad rara: el ground
+      truth llega solo, dos horas después de la predicción. Todos los números de esta
+      página salen de los datos ya ingestados, no de estimaciones.
+    </p>
+    <div class="masthead-meta">
+      <span>Fecha · <b>18 ago 2026</b></span>
+      <span>Partidos en Silver · <b>1.520</b></span>
+      <span>Temporadas · <b>2022-23 → 2025-26</b></span>
+      <span>Arranca 2026-27 · <b>21 ago 2026</b></span>
+      <span>Bronze · <b>27 MB</b></span>
+    </div>
+  </header>
+
+  <section class="target-key">
+    <div>
+      <div class="key-bar">
+        <span class="k-home">44,5 %</span>
+        <span class="k-draw">24,1 %</span>
+        <span class="k-away">31,4 %</span>
+      </div>
+    </div>
+    <div class="key-legend">
+      <div class="l-home"><i></i><span><code>1</code> &nbsp;Gana el local — la clase mayoritaria y el baseline trivial</span></div>
+      <div class="l-draw"><i></i><span><code>X</code> &nbsp;Empate — <b>la clase difícil</b>: casi nunca es el argmax, ni del modelo ni del mercado</span></div>
+      <div class="l-away"><i></i><span><code>2</code> &nbsp;Gana el visitante</span></div>
+      <div class="note">Distribución medida sobre los 1.520 partidos de las cuatro temporadas ingestadas.</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Los diez bloques</h2>
+      <p>El orden es el de lectura del Canvas, no el de prioridad. El diseño se lee de derecha a izquierda: primero el valor y la decisión.</p>
+    </div>
+
+    <div class="canvas">
+
+      <article class="block wide">
+        <div class="block-head"><span class="block-num">B1</span><h3>Propuesta de valor</h3></div>
+        <p class="lede">
+          Para el <em>manager de Fantasy Premier League</em>, que tiene que decidir capitán y
+          transferencias antes de un deadline que vence <strong>90 minutos antes</strong> del primer
+          partido, éste es un <strong>predictor 1X2 calibrado</strong> que publica las probabilidades
+          de los 10 partidos de la fecha <em>antes</em> del deadline y las contrasta contra el
+          resultado real dos horas después.
+        </p>
+        <ul>
+          <li><strong>Objetivo:</strong> que la decisión se apoye en una probabilidad calibrada y auditable, no en la tabla de posiciones.</li>
+          <li><strong>Éxito:</strong> no es la accuracy — es en cuántas fechas el modelo le gana a «siempre el local», y qué tan cerca queda del mercado.</li>
+          <li><strong>Qué no es:</strong> no es un producto de apuestas. Las cuotas entran como benchmark y como feature, nunca como recomendación.</li>
+        </ul>
+      </article>
+
+      <article class="block third">
+        <div class="block-head"><span class="block-num">B2</span><h3>Fuentes de datos</h3></div>
+        <ul>
+          <li><strong>football-data.co.uk</strong> — cuotas de cierre, tiros, córners, tarjetas. 1 fila = 1 partido.</li>
+          <li><strong>vaastav/FPL</strong> — el histórico jugador × fecha con xG/xA. La API oficial no lo sirve.</li>
+          <li><strong>API oficial de FPL</strong> — fixtures, deadlines, FDR, disponibilidad y el resultado en vivo.</li>
+        </ul>
+        <div class="stat-row">
+          <span class="chip on">PII: ninguna</span>
+          <span class="chip">27 MB Bronze</span>
+          <span class="chip">3 fuentes gratuitas</span>
+        </div>
+      </article>
+
+      <article class="block third">
+        <div class="block-head"><span class="block-num">B3</span><h3>Tarea de predicción</h3></div>
+        <p>Clasificación <strong>supervisada multiclase</strong>: <code>home</code> / <code>draw</code> / <code>away</code>.</p>
+        <p>El sample no es un partido — es <strong>un partido visto desde antes del deadline de su
+        gameweek</strong>. Queda definido por el par <code>(fixture_id, predicted_at)</code>.</p>
+        <div class="stat-row">
+          <span class="chip">1.520 samples</span>
+          <span class="chip">3 clases</span>
+          <span class="chip">ML, no Deep Learning</span>
+        </div>
+      </article>
+
+      <article class="block">
+        <div class="block-head"><span class="block-num">B4</span><h3>Ingeniería de features</h3></div>
+        <p>Todo colapsa a una fila por partido: forma del equipo, forma como local/visitante, xG,
+        FDR, disponibilidad, mercado y descanso.</p>
+        <div class="rule-list">
+          <div><b>Regla 1.</b> Toda feature se calcula sobre partidos anteriores al deadline.</div>
+          <div><b>Regla 2.</b> Las ventanas rolling van sobre los últimos N <i>partidos</i> de cada equipo, nunca las últimas N gameweeks — en 2022-23 la GW7 no existe.</div>
+          <div><b>Regla 3.</b> El chequeo anti-leakage corre <i>antes</i> de escribir Gold, no sólo en los tests.</div>
+        </div>
+        <div class="stat-row">
+          <span class="chip">ventanas 3 y 5</span>
+          <span class="chip warn">2 equipos sin historial</span>
+        </div>
+      </article>
+
+      <article class="block">
+        <div class="block-head"><span class="block-num">B5</span><h3>Evaluación offline</h3></div>
+        <p>Split <strong>temporal</strong>, nunca aleatorio: train 2022-25 (1.140), test 2025-26 (380).
+        Métricas en orden — log-loss, calibración, accuracy.</p>
+        <ul>
+          <li><strong>Vara mínima para producción:</strong> log-loss del holdout por debajo de <strong>1,085</strong> (el prior de clase), en la variante <i>sin cuotas</i>.</li>
+          <li>Accuracy siempre con intervalo: con 380 partidos el error estándar ronda <strong>±5 puntos</strong>.</li>
+          <li><strong>Errores baratos</strong> — cuesta puntos de FPL, no dinero ni salud. Eso autoriza un modelo simple.</li>
+        </ul>
+      </article>
+
+      <article class="block">
+        <div class="block-head"><span class="block-num">B6</span><h3>Toma de decisiones</h3></div>
+        <p>Cada fecha, antes del deadline, se publican las tres probabilidades de los 10 partidos. El manager las usa para:</p>
+        <ul>
+          <li><strong>Capitán</strong> — priorizar jugadores de equipos con p(victoria) alta.</li>
+          <li><strong>Defensa y arquero</strong> — equipos con probabilidad alta de no recibir gol.</li>
+          <li><strong>Transferencias</strong> — mirar la dificultad de las próximas fechas, no sólo la que viene.</li>
+        </ul>
+        <p>Es una <strong>sugerencia</strong>, no una acción automática: el manager decide.</p>
+      </article>
+
+      <article class="block">
+        <div class="block-head"><span class="block-num">B7</span><h3>Realizando predicciones</h3></div>
+        <p>Batch anclado al deadline. No es estético: la predicción sólo vale si
+        <code>predicted_at &lt; deadline_time</code>.</p>
+        <div class="rule-list">
+          <div><b>T − 3 h del deadline.</b> Snapshot de FPL → features → predicción → registro.</div>
+          <div><b>T + 2 h del último partido.</b> Resultados → métricas → decisión de retraining.</div>
+        </div>
+        <p>FastAPI sobre Cloud Run, sin GPU: la inferencia son 10 filas. El endpoint queda expuesto
+        también para la demo.</p>
+      </article>
+
+      <article class="block">
+        <div class="block-head"><span class="block-num">B8</span><h3>Recolectando datos</h3></div>
+        <p><strong>La etiqueta llega sola.</strong> Ésta es la propiedad que define el proyecto: el
+        marcador <i>es</i> la etiqueta, y aparece dos horas después del partido.</p>
+        <ul>
+          <li><strong>Human-in-the-loop en el etiquetado: cero.</strong></li>
+          <li>10 partidos nuevos por gameweek, 380 por temporada.</li>
+          <li>Bronze append-only particionado por <code>ingested_at</code>: el snapshot pre-deadline es la prueba auditable de que no se usó el futuro.</li>
+        </ul>
+      </article>
+
+      <article class="block">
+        <div class="block-head"><span class="block-num">B9</span><h3>Construyendo modelos</h3></div>
+        <p>Logística multinomial regularizada primero — coeficientes interpretables para la defensa.
+        Después un LightGBM chico.</p>
+        <div class="rule-list">
+          <div><b>Programado.</b> Semanal, al cierre de cada gameweek.</div>
+          <div><b>Por degradación.</b> Log-loss rodante sobre umbral <i>y</i> que la caída no se explique por el mercado cayendo igual.</div>
+          <div><b>Por drift.</b> Cambio de temporada.</div>
+        </div>
+        <p>El modelo nuevo <strong>sólo reemplaza al viejo si le gana en el holdout</strong>.</p>
+      </article>
+
+      <article class="block full">
+        <div class="block-head"><span class="block-num">B10</span><h3>Monitoreo y evaluación en vivo</h3></div>
+        <p style="max-width:78ch">
+          Log-loss y accuracy rodantes sobre las últimas K gameweeks, contra los mismos baselines
+          calculados <strong>sobre el mismo período</strong>. La distinción que importa: una caída del modelo
+          <strong>acompañada</strong> de una caída del baseline de cuotas es la liga siendo más impredecible,
+          no el modelo degradándose. Sin comparar contra el mercado del mismo período, el monitoreo
+          confunde las dos cosas.
+        </p>
+        <div class="stat-row">
+          <span class="chip">goles visitante · drift 19,5 %</span>
+          <span class="chip">tiros al arco local · 19,0 %</span>
+          <span class="chip">goles totales · 17,9 %</span>
+          <span class="chip">prob. implícita local · 3,2 %</span>
+          <span class="chip warn">3 de 20 equipos cambian por temporada</span>
+        </div>
+        <p style="max-width:78ch"><strong>Creación de valor:</strong> % de fechas en que el modelo le gana a
+        «siempre el local», distancia al mercado en log-loss, y calibración en vivo — de los partidos
+        donde dijimos 60 %, cuántos salieron.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Las varas, calculadas sobre el holdout 2025-26</h2>
+      <p>Ningún número está citado de memoria: salen de <code>python -m eda.run_eda</code>.</p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Baseline</th><th class="num">Accuracy</th><th class="num">Log-loss</th><th>Lectura</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Siempre gana el local</td><td class="num">42,6 %</td><td class="num">—</td><td>El piso. Debajo de esto el modelo no vale nada.</td></tr>
+          <tr><td>Prior de clase</td><td class="num">42,6 %</td><td class="num">1,085</td><td>La vara de log-loss que hay que superar para salir a producción.</td></tr>
+          <tr><td><b>Cuotas de cierre</b></td><td class="num"><b>49,5 %</b></td><td class="num"><b>1,012</b></td><td>El mercado. Por temporada dio 55,5 / 60,0 / 55,5 / 49,5 % — <b>el techo realista es ~55 %</b>.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Frescura de cada fuente — medido, no supuesto</h2>
+      <p>Ésta es la pregunta que decide qué fuente puede estar en el camino crítico de una predicción en producción. Medición del 18/08/2026.</p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Fuente</th><th>Cadencia real medida</th><th>¿En producción?</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>API de FPL</b></td>
+            <td>Continua. Fixtures y <code>status</code> de cada jugador cambian a lo largo de la semana; el resultado aparece durante el partido.</td>
+            <td class="verdict-yes">Sí — es la fuente operativa</td>
+          </tr>
+          <tr>
+            <td><b>football-data · <code>fixtures.csv</code></b></td>
+            <td><code>Last-Modified</code> de hoy 10:38 GMT. Trae cuotas <b>pre-partido</b> (B365, Max, Avg).</td>
+            <td class="verdict-mid">Sí, pero sólo cubre 2-3 días. Hoy: 3 filas, ninguna de Premier</td>
+          </tr>
+          <tr>
+            <td><b>football-data · <code>E0.csv</code></b></td>
+            <td>Se republica durante la temporada. El archivo de 2026-27 todavía no existe: el URL redirige (301).</td>
+            <td class="verdict-mid">Sí para stats post-partido. Cadencia a medir en la GW1</td>
+          </tr>
+          <tr>
+            <td><b>vaastav</b></td>
+            <td><b>Gap mediano 10 días, máximo 96.</b> En 2025-26 tocó <code>merged_gw.csv</code> 12 veces: semanal hasta la GW9, después saltó del 01/11 al 05/02 — la GW29 recién el 13/03 y la GW38 el 17/06.</td>
+            <td class="verdict-no">No. Sólo para el histórico de entrenamiento</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="flagbox">
+      <p class="eyebrow">Consecuencia de diseño</p>
+      <h3>El pipeline se auto-alimenta el histórico</h3>
+      <p>
+        vaastav sirve para el arranque en frío — 2022-23 a 2025-26 — y nada más. Desde la GW1 de
+        2026-27 el histórico jugador-fecha lo construimos nosotros: Bronze es append-only y cada
+        corrida post-fecha guarda el snapshot de <code>/event/{GW}/live/</code>. En producción
+        <strong>no dependemos de que un repo de GitHub se actualice</strong>. Es la diferencia entre un
+        pipeline que corre solo y uno que se rompe en silencio a mitad de temporada.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>El ciclo cerrado</h2>
+      <p>El diagrama del Canvas: de la fuente a la predicción antes del deadline, y de vuelta desde el resultado.</p>
+    </div>
+    <div class="diagram-wrap">
+      <svg class="cycle" viewBox="0 0 880 310" role="img" aria-label="Diagrama del ciclo: fuentes, Bronze, Silver, Gold, modelo, predicción antes del deadline, resultado dos horas después, métricas y drift, retraining.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+          </marker>
+        </defs>
+
+        <g color="var(--ink-soft)">
+          <!-- fila 1 -->
+          <rect class="bx" x="8"   y="42" width="118" height="52" rx="2"></rect>
+          <text class="lbl"    x="67"  y="66" text-anchor="middle">Fuentes</text>
+          <text class="lbl-sm" x="67"  y="82" text-anchor="middle">B2</text>
+
+          <rect class="bx" x="158" y="42" width="110" height="52" rx="2"></rect>
+          <text class="lbl"    x="213" y="66" text-anchor="middle">Bronze</text>
+          <text class="lbl-sm" x="213" y="82" text-anchor="middle">APPEND-ONLY</text>
+
+          <rect class="bx" x="298" y="42" width="110" height="52" rx="2"></rect>
+          <text class="lbl"    x="353" y="66" text-anchor="middle">Silver</text>
+          <text class="lbl-sm" x="353" y="82" text-anchor="middle">JUGADOR-GW</text>
+
+          <rect class="bx" x="438" y="42" width="110" height="52" rx="2"></rect>
+          <text class="lbl"    x="493" y="66" text-anchor="middle">Gold</text>
+          <text class="lbl-sm" x="493" y="82" text-anchor="middle">B4 · 1 PARTIDO</text>
+
+          <rect class="bx" x="578" y="42" width="110" height="52" rx="2"></rect>
+          <text class="lbl"    x="633" y="66" text-anchor="middle">Modelo</text>
+          <text class="lbl-sm" x="633" y="82" text-anchor="middle">B9</text>
+
+          <rect class="bx-key" x="718" y="42" width="150" height="52" rx="2"></rect>
+          <text class="lbl"    x="793" y="64" text-anchor="middle">Predicción</text>
+          <text class="lbl-sm" x="793" y="80" text-anchor="middle">B7 · ANTES DEL DEADLINE</text>
+
+          <!-- flechas fila 1 -->
+          <path class="arw" d="M 126 68 L 156 68" marker-end="url(#ah)"></path>
+          <path class="arw" d="M 268 68 L 296 68" marker-end="url(#ah)"></path>
+          <path class="arw" d="M 408 68 L 436 68" marker-end="url(#ah)"></path>
+          <path class="arw" d="M 548 68 L 576 68" marker-end="url(#ah)"></path>
+          <path class="arw" d="M 688 68 L 716 68" marker-end="url(#ah)"></path>
+
+          <!-- bajada: se juega la fecha -->
+          <path class="arw" d="M 793 94 L 793 172" marker-end="url(#ah)"></path>
+          <text class="edge-l" x="805" y="138">se juega la fecha</text>
+
+          <!-- fila 2 -->
+          <rect class="bx-gt" x="718" y="174" width="150" height="52" rx="2"></rect>
+          <text class="lbl"    x="793" y="196" text-anchor="middle">Resultado</text>
+          <text class="lbl-sm" x="793" y="212" text-anchor="middle">B8 · +2 h, LLEGA SOLO</text>
+
+          <rect class="bx" x="488" y="174" width="170" height="52" rx="2"></rect>
+          <text class="lbl"    x="573" y="196" text-anchor="middle">Métricas y drift</text>
+          <text class="lbl-sm" x="573" y="212" text-anchor="middle">B10 · VS. MERCADO</text>
+
+          <rect class="bx" x="288" y="174" width="150" height="52" rx="2"></rect>
+          <text class="lbl"    x="363" y="196" text-anchor="middle">Retraining</text>
+          <text class="lbl-sm" x="363" y="212" text-anchor="middle">B9 · SI GANA EL HOLDOUT</text>
+
+          <!-- flechas fila 2, derecha a izquierda -->
+          <path class="arw" d="M 716 200 L 660 200" marker-end="url(#ah)"></path>
+          <path class="arw" d="M 486 200 L 440 200" marker-end="url(#ah)"></path>
+
+          <!-- retraining sube al modelo -->
+          <path class="arw" d="M 363 172 L 363 136 L 633 136 L 633 96" marker-end="url(#ah)"></path>
+
+          <!-- el resultado vuelve a Bronze -->
+          <path class="arw-d" d="M 793 226 L 793 268 L 213 268 L 213 96" marker-end="url(#ah)"></path>
+          <text class="edge-l" x="430" y="284">el ground truth se guarda como snapshot nuevo — el histórico se construye solo</text>
+        </g>
+      </svg>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Qué queda abierto</h2>
+      <p>Cuatro cosas sin cerrar. Las tres primeras se resuelven solas en la GW1, el 21 de agosto.</p>
+    </div>
+    <div class="open-list">
+
+      <div class="open-item">
+        <span class="n">01</span>
+        <div>
+          <h4>Re-verificar <code>strength_*</code> después de la GW1</h4>
+          <p>
+            Hoy hay un train/serve skew silencioso: en las cuatro temporadas históricas
+            <code>strength_overall_home</code> promedia ~1.130, pero en el snapshot de pretemporada de
+            2026-27 promedia <b>2,85</b> — y <code>strength_attack_*</code> está en <b>cero para los 20
+            equipos</b>. El modelo entrenaría con valores de cuatro cifras y serviría con valores de un
+            dígito. Por eso el grupo «Fuerza» queda fuera del feature set inicial.
+          </p>
+        </div>
+      </div>
+
+      <div class="open-item">
+        <span class="n">02</span>
+        <div>
+          <h4>Medir la cadencia intra-temporada de <code>E0.csv</code></h4>
+          <p>
+            Registrar el <code>Last-Modified</code> en cada corrida de ingesta desde la GW1. Define si las
+            features de forma — tiros, córners — se pueden refrescar a tiempo para el deadline
+            siguiente, o si hay que derivarlas de la API.
+          </p>
+        </div>
+      </div>
+
+      <div class="open-item">
+        <span class="n">03</span>
+        <div>
+          <h4>Confirmar los campos de <code>/event/{GW}/live/</code></h4>
+          <p>
+            En pretemporada devuelve <code>elements</code> vacío. Hay que verificar en la GW1 que trae
+            <code>expected_goals</code> por jugador: es exactamente lo que nos independiza de vaastav.
+          </p>
+        </div>
+      </div>
+
+      <div class="open-item">
+        <span class="n">04</span>
+        <div>
+          <h4>Cerrar el umbral de degradación de B10 con un número</h4>
+          <p>
+            «Cuando parezca» no es un disparador. Hace falta fijar el umbral de log-loss rodante y la
+            cantidad K de gameweeks de la ventana, antes de que corra la primera fecha.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    <span>Fuente de los números: <b>python -m eda.run_eda</b> + Silver ingestado</span>
+    <span>Documento completo: <b>docs/ML-CANVAS.md</b></span>
+    <span>Canvas de Louis Dorard · machinelearningcanvas.com</span>
+  </footer>
+
+</div>
