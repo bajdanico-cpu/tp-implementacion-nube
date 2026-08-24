@@ -467,6 +467,130 @@ dos. Es una decisión tomada con un número, no por gusto.
 
 ---
 
+## Otros modelos probados
+
+`training/models_alt.py`. Todos sobre el mismo holdout, mismas features.
+
+| Modelo | Accuracy | F1 macro | F1 empate | Log-loss | Empates predichos |
+|---|---|---|---|---|---|
+| **`hgb`** (HistGradientBoosting de sklearn) | **0,500** | **0,395** | 0,055 | **1,031** | 6 |
+| `xgb_gbt` | 0,492 | 0,385 | 0,037 | 1,044 | 5 |
+| Poisson bivariado | 0,484 | 0,367 | **0,000** | 1,042 | **0** |
+| Logit ordinal | 0,432 | 0,385 | **0,184** | 1,131 | 70 |
+| **Red neuronal (MLP)** | **0,426** | 0,378 | 0,129 | 1,100 | 67 |
+| Ensamble de los cinco | 0,492 | 0,384 | 0,036 | 1,033 | 6 |
+
+Referencias: mercado 0,495 / 1,012 — prior de clase 0,426 / 1,085.
+
+**La red neuronal es de las peores**, apenas por encima del baseline trivial. Con 1.140
+filas y 159 features no tiene con qué: es el caso de manual donde una red sobreajusta. Ya
+no es una intuición, está medido. `hgb` quedó incorporado a la CLI por ser el mejor.
+
+### El Poisson bivariado: la prueba estructural sobre el empate
+
+Este modelo no predice la clase. Predice **cuántos goles hace cada equipo** y de ahí deriva
+las tres probabilidades: `P(empate) = Σₖ P(local=k)·P(visita=k)`. El empate deja de ser una
+etiqueta arbitraria y pasa a ser la diagonal de la distribución conjunta.
+
+Y aun así **predice cero empates**, con un máximo de probabilidad de 0,302:
+
+| | Media de P(empate) | Máximo | Veces que es argmax |
+|---|---|---|---|
+| Poisson bivariado | 0,237 | **0,302** | **0** |
+| `xgb_gbt` | 0,238 | 0,421 | 5 |
+| **Mercado real** | 0,248 | **0,312** | **0** |
+
+Un modelo que *deduce* el empate de la estructura del marcador —y que no puede "elegir" no
+predecirlo— llega al mismo lugar que las casas de apuestas. **No es un artefacto del
+clasificador: es una propiedad del fútbol.** Con local ~43 %, visitante ~30 % y empate
+~25 %, el empate nunca es el resultado más probable.
+
+### Logit ordinal: el empate como franja, no como clase
+
+Aprovecha que las clases tienen orden natural (derrota < empate < victoria) sobre un eje
+latente de superioridad. Entrena dos umbrales acumulados y define `P(empate)` como la
+franja entre ambos. Es el único que predice empates en cantidad (70) y tiene el mejor F1 de
+esa clase (0,184) — pero paga con la peor accuracy y el peor log-loss. Sirve como
+recordatorio de que forzar la clase del medio tiene un costo.
+
+---
+
+## Dónde le gana el modelo a cada vara
+
+`python -m training.analysis`. Un promedio global no dice si el modelo sirve; lo que
+importa es **en qué situaciones** gana.
+
+### Fecha a fecha
+
+| Le gana a | % de las 38 fechas |
+|---|---|
+| "Siempre local" en accuracy | **55,3 %** |
+| El mercado en accuracy | **23,7 %** |
+| El mercado en log-loss | **39,5 %** |
+
+### Por favoritismo del mercado
+
+| Tramo | n | Modelo | Mercado | Diferencia |
+|---|---|---|---|---|
+| muy parejo (<40 %) | 60 | 0,333 | 0,400 | **−0,067** |
+| parejo (40-50 %) | 129 | 0,442 | 0,426 | +0,016 |
+| favorito claro (50-60 %) | 98 | 0,500 | 0,480 | +0,020 |
+| cantado (>60 %) | 93 | 0,656 | 0,667 | −0,011 |
+
+El modelo aporta algo en la franja intermedia y **pierde claramente en los partidos muy
+parejos**, que son justo los que más margen dejarían.
+
+### La prueba decisiva: cuando el modelo discrepa del mercado
+
+| Situación | n | Acierta el modelo | Acierta el mercado |
+|---|---|---|---|
+| Coinciden | 328 | 0,515 | 0,515 |
+| **DISCREPAN** | **52** | **0,346** | **0,365** |
+
+**Cuando el modelo tiene opinión propia, se equivoca más que el mercado.** Ésta es la
+medición que explica el ROI negativo mejor que ninguna otra: el modelo no tiene una ventaja
+informativa sobre las casas de apuestas. Reproduce bien lo que el mercado ya sabe y agrega
+ruido cuando se aparta.
+
+Para la propuesta de valor del bloque 1 —ganar plata con apuestas— **la conclusión honesta
+es que el sistema todavía no la sostiene.**
+
+### Dónde se pierde el log-loss
+
+| Resultado real | n | Log-loss modelo | Log-loss mercado | Diferencia |
+|---|---|---|---|---|
+| away | 114 | 1,025 | 1,039 | **−0,014** |
+| draw | 104 | **1,472** | 1,388 | **+0,085** |
+| home | 162 | 0,770 | 0,751 | +0,019 |
+
+El empate es donde más se pierde: es la clase peor estimada, y por lejos.
+
+### ¿Hace falta predecir el empate?
+
+Sí, aunque nunca sea el argmax, y por una razón aritmética: **las tres probabilidades suman
+1**. Subestimar el empate en 3,6 puntos —que es lo que hace el modelo— reparte esos puntos
+entre local y visitante, e infla el valor esperado de *todas* las apuestas. Con cuotas de 2
+a 4, un punto de probabilidad de más son 2 a 4 puntos de EV inflado, y el umbral de apuesta
+son 5 puntos: alcanza para disparar apuestas que no tenían valor.
+
+Corregir ese sesgo mejora el log-loss (1,0387 → 1,0331), aunque no arregla el ROI.
+
+**Sobre apostar sólo al empate.** En una corrida dio ROI +0,092 y parecía la única
+estrategia rentable. Medido con cuidado, no lo es:
+
+```
+xgb_gbt, apostando sólo al empate:
+  umbral EV 0,00   n=125   ROI −0,001 ± 0,160
+  umbral EV 0,05   n=101   ROI +0,029 ± 0,184
+  umbral EV 0,10   n= 86   ROI +0,018 ± 0,199
+```
+
+**El error estándar se come el resultado.** Con cuotas medias de 4,4 la varianza por apuesta
+es enorme y cien apuestas no alcanzan para distinguir +3 % de 0. Es exactamente el tipo de
+conclusión apresurada que el resto del proyecto se ocupa de evitar.
+
+---
+
 ## Persistencia
 
 ```

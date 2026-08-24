@@ -63,7 +63,7 @@ def correr_modelo(nombre: str, info, features: list[str], gold, guardar: bool) -
             "n_features": len(features),
             "classes_": dataset.CLASES,
             "hyperparams": (models.hiperparametros(nombre, info)
-                            if nombre != "logreg" else {"modelo": "logreg"}),
+                            if nombre in ("xgb_gbt", "xgb_rf") else {"modelo": nombre}),
             "best_iteration": rep.get("best_iteration"),
             "n_seeds": CFG.n_seeds, "seed": CFG.seed,
             "device_requested": info.requested, "device_used": info.used,

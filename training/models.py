@@ -35,7 +35,11 @@ import numpy as np
 from common.config import CFG
 from training.device import DeviceInfo
 
-MODELOS = ("xgb_gbt", "xgb_rf", "logreg")
+MODELOS = ("xgb_gbt", "xgb_rf", "hgb", "logreg")
+
+# Alternativos, en training/models_alt.py: Poisson bivariado (deriva el 1X2 de las
+# distribuciones de goles), logit ordinal (trata el empate como la franja entre dos
+# umbrales) y red neuronal. Se comparan con `python -m training.compare_models`.
 
 
 def hiperparametros(nombre: str, info: DeviceInfo, seed: int | None = None) -> dict[str, Any]:
@@ -77,6 +81,18 @@ def construir(nombre: str, info: DeviceInfo, seed: int | None = None,
     """Fábrica de modelos."""
     if nombre not in MODELOS:
         raise ValueError(f"Modelo desconocido: {nombre!r}. Válidos: {MODELOS}")
+
+    if nombre == "hgb":
+        # HistGradientBoosting de scikit-learn. Mismo espíritu que XGBoost pero otra
+        # implementación; sobre este dataset dio el mejor resultado medido (accuracy
+        # 0,500 y log-loss 1,031). Maneja NaN nativamente, igual que XGBoost.
+        from sklearn.ensemble import HistGradientBoostingClassifier
+
+        return HistGradientBoostingClassifier(
+            max_depth=3, min_samples_leaf=20, learning_rate=0.03, max_iter=400,
+            l2_regularization=5.0, max_bins=64, early_stopping=True,
+            validation_fraction=0.15,
+            random_state=CFG.seed if seed is None else seed)
 
     if nombre == "logreg":
         from sklearn.impute import SimpleImputer
