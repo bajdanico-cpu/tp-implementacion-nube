@@ -515,6 +515,68 @@ recordatorio de que forzar la clase del medio tiene un costo.
 
 ---
 
+## La grilla completa: modelo x datos de entrenamiento
+
+`python -m training.compare_models`. Las rondas anteriores dejaron un hueco: las ablaciones
+de datos se midieron con el feature set viejo (143 columnas, **sin Elo**) y los modelos
+alternativos con el nuevo (159) **pero entrenando con todo**. Nunca se cruzaron, y al
+cruzarlos una conclusión cambia.
+
+### Accuracy — mercado 0,4947, prior de clase 0,4263
+
+| Modelo | todo (1.140) | sin_xg_falso (1.004) | sin_2022_23 (760) |
+|---|---|---|---|
+| `xgb_gbt` | 0,4868 | **0,5132** | 0,5000 |
+| `xgb_rf` | 0,5000 | 0,4921 | 0,4947 |
+| `hgb` | 0,5053 | 0,4895 | 0,4974 |
+| `logreg` | 0,4316 | 0,4342 | 0,4553 |
+| `poisson` | 0,4947 | 0,4974 | 0,4737 |
+| `ordinal` | 0,4316 | 0,4658 | 0,4553 |
+| `mlp` | 0,4579 | 0,4868 | 0,4579 |
+
+### Log-loss — mercado 1,0118, prior 1,0845
+
+| Modelo | todo | sin_xg_falso | sin_2022_23 |
+|---|---|---|---|
+| `xgb_gbt` | 1,0379 | 1,0364 | 1,0351 |
+| `xgb_rf` | 1,0293 | 1,0315 | 1,0310 |
+| `hgb` | 1,0304 | 1,0365 | **1,0277** |
+| `logreg` | 1,1446 | 1,1437 | 1,1865 |
+| `poisson` | 1,0379 | 1,0390 | 1,0427 |
+| `ordinal` | 1,1312 | 1,1308 | 1,2234 |
+| `mlp` | 1,0680 | 1,0679 | 1,0690 |
+
+**Mejores combinaciones:** `xgb_gbt` + `sin_xg_falso` para accuracy (0,5132) y `hgb` +
+`sin_2022_23` para log-loss (1,0277).
+
+### Corrección: sacar 2022-23 entera ya no es la mejor idea
+
+| Modelos que mejoran respecto de entrenar con todo | Accuracy | Log-loss |
+|---|---|---|
+| `sin_xg_falso` | **5 de 7** | **4 de 7** |
+| `sin_2022_23` | 3 de 7 | 2 de 7 |
+
+Medido con **143 features**, sacar la temporada entera ganaba claro: 0,505 contra 0,490.
+Medido con **159** —tras agregar Elo— esa ventaja se diluye, y encima destroza a los
+modelos lineales (`logreg` pasa de 1,1446 a 1,1865 de log-loss; `ordinal` de 1,1312 a
+1,2234).
+
+La explicación es que **el Elo ya codifica la fuerza de largo plazo** que aportaba la
+temporada extra, así que su valor marginal cae; pero el ruido de sacar un tercio de los
+datos sigue igual. Es una interacción entre features y datos que sólo se ve corriendo la
+grilla, no probando una cosa a la vez.
+
+**Lo que sí aguanta es la versión quirúrgica de la idea:** sacar únicamente las fechas con
+xG falso. Mejora 5 de 7 modelos, da el mejor resultado absoluto y no rompe a ninguno. La
+diferencia con la versión agresiva es que ahí se saca lo que está *mal medido*; acá se
+sacaba también lo que estaba bien.
+
+Nótese además que **la limpieza de datos ayuda más a los modelos débiles**: `mlp` sube de
+0,4579 a 0,4868 y `ordinal` de 0,4316 a 0,4658, mientras que los boosting apenas se mueven.
+Un modelo con menos capacidad de ignorar ruido depende más de que el dato esté limpio.
+
+---
+
 ## Dónde le gana el modelo a cada vara
 
 `python -m training.analysis`. Un promedio global no dice si el modelo sirve; lo que
