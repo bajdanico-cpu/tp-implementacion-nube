@@ -76,6 +76,33 @@ def cargar() -> pd.DataFrame:
     return read_table(TABLA, layer="gold")
 
 
+# Filtros de las filas que se usan como OBJETIVO de entrenamiento. Lo importante: las
+# filas excluidas siguen contando como HISTORIA para las ventanas de los partidos
+# posteriores, porque las features de Gold ya vienen calculadas sobre la secuencia
+# completa. Filtrar el train no le quita informacion a ninguna otra fila.
+FILTROS_TRAIN = {
+    "todo": None,
+    # El xG de 2022-23 viene hardcodeado en cero hasta la GW15: esas filas ensenian un
+    # artefacto del calendario de publicacion de FPL. Sacarlas mejora 5 de 7 modelos.
+    "sin_xg_falso": lambda d: d["xg_available"],
+    # La temporada entera. Ganaba con el feature set viejo; con Elo la ventaja se diluye.
+    "sin_2022_23": lambda d: d["season"] != "2022-23",
+}
+
+
+def filtrar_train(df: pd.DataFrame, variante: str | None = None) -> pd.DataFrame:
+    variante = variante or CFG.datos_entrenamiento
+    if variante not in FILTROS_TRAIN:
+        raise ValueError(f"variante desconocida: {variante!r}. "
+                         f"Validas: {list(FILTROS_TRAIN)}")
+    f = FILTROS_TRAIN[variante]
+    if f is None:
+        return df
+    out = df[f(df)]
+    log.info("Datos de entrenamiento '%s': %d -> %d filas", variante, len(df), len(out))
+    return out
+
+
 def matriz(df: pd.DataFrame, features: list[str]) -> np.ndarray:
     """DataFrame -> ndarray float32, en el orden EXACTO del spec.
 
@@ -90,7 +117,8 @@ def matriz(df: pd.DataFrame, features: list[str]) -> np.ndarray:
 
 def preparar(gold: pd.DataFrame | None = None,
              features: list[str] | None = None,
-             con_validacion: bool = True) -> Split:
+             con_validacion: bool = True,
+             datos: str | None = None) -> Split:
     """Arma el split temporal del canvas."""
     gold = cargar() if gold is None else gold
     features = features or spec.FEATURES
@@ -106,7 +134,7 @@ def preparar(gold: pd.DataFrame | None = None,
             f"contaminaría.")
 
     solo_train = [s for s in train_seasons if s != valid_season]
-    tr = gold[gold["season"].isin(solo_train)]
+    tr = filtrar_train(gold[gold["season"].isin(solo_train)], datos)
     va = gold[gold["season"] == valid_season] if valid_season else None
     te = gold[gold["season"] == test_season]
 
@@ -132,7 +160,8 @@ def preparar(gold: pd.DataFrame | None = None,
     )
 
 
-def train_completo(gold: pd.DataFrame, features: list[str]) -> tuple[np.ndarray, np.ndarray]:
+def train_completo(gold: pd.DataFrame, features: list[str],
+                   datos: str | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Train + validación juntos, para el refit final con el nº de rondas ya fijado."""
-    d = gold[gold["season"].isin(CFG.seasons_for_training())]
+    d = filtrar_train(gold[gold["season"].isin(CFG.seasons_for_training())], datos)
     return matriz(d, features), codificar(d["target_1x2"])

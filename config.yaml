@@ -107,6 +107,23 @@ logging:
   format: "%(asctime)s | %(levelname)-7s | %(name)-22s | %(message)s"
 
 training:
+  # --- El modelo de produccion ---
+  # Elegido midiendo, no por gusto. Gana en accuracy (0,5160) y F1 macro (0,4205) en el
+  # walk-forward de 38 fechas, y coincide con el holdout (0,5132). Le gana a "siempre
+  # local" en el 60,5% de las fechas, contra 52,6% de los demas candidatos.
+  # La grilla completa esta en training/output/comparacion_completa.csv.
+  modelo: "xgb_gbt"
+
+  # Que filas se usan como OBJETIVO de entrenamiento. Las excluidas se conservan igual
+  # como HISTORIA para las ventanas de los partidos posteriores: las features de Gold ya
+  # estan calculadas sobre la secuencia completa.
+  #   "todo"          las 1.140
+  #   "sin_xg_falso"  saca las fechas de 2022-23 donde el xG viene hardcodeado en cero
+  #                   (1.004 filas). Mejora 5 de 7 modelos.
+  #   "sin_2022_23"   saca la temporada entera (760). Mejoraba con el feature set viejo,
+  #                   pero al agregar Elo la ventaja se diluye y rompe a los lineales.
+  datos_entrenamiento: "sin_xg_falso"
+
   # "auto" prueba CUDA y cae a CPU si falla; "cuda" explicito LEVANTA si no hay GPU
   # (explicito es explicito); "cpu" fuerza CPU. Pisable con la variable TP_DEVICE.
   device: "auto"

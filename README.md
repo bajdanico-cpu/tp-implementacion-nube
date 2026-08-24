@@ -82,8 +82,14 @@ python -m features.spec --docs      # regenera docs/FEATURES.md desde el contrat
 python -m training.run --todos                             # los tres modelos, comparados
 python -m training.run --model xgb_gbt --walk-forward      # 38 folds, simula el ciclo
 python -m training.benchmark_gpu                           # CPU vs GPU con barrido de escala
+python -m training.compare_models                          # grilla 7 modelos x 3 variantes
+python -m training.analysis                                # donde le gana a cada vara
 
-# 6. EDA y baselines
+# 6. El notebook que recorre todo
+python notebooks/00_recorrido_completo.py                  # regenera el .ipynb
+jupyter lab notebooks/00_recorrido_completo.ipynb
+
+# 7. EDA y baselines
 python -m eda.run_eda
 ```
 
@@ -237,18 +243,30 @@ sólo avisa por warning. Usar `eda.baselines.CLASES_ORD`.
 
 | | |
 |---|---|
-| Tabla Gold | **1.520 filas × 165 columnas**, de las cuales **143 son features** |
+| Tabla Gold | **1.520 filas × 181 columnas**, de las cuales **159 son features** |
 | Diccionario | [`docs/FEATURES.md`](docs/FEATURES.md), **generado** desde `features/spec.py` |
-| Modelos | `xgb_gbt`, `xgb_rf` (los dos del canvas) y `logreg` como piso |
-| Mejor accuracy | **`xgb_rf` 0,505** [0,455 – 0,555] — le gana al baseline del canvas (0,426) y a la accuracy del mercado (0,495) **sin usar cuotas** |
-| Mejor ROI | `logreg`, −0,009 contra −0,086 de apostar siempre al local |
-| GPU | **Se midió**: pierde 1,7× a 1.140 filas, gana **5,4×** a 114.000. Ver `training/README.md` |
+| **Modelo elegido** | **XGBoost** (`xgb_gbt`), entrenado sin las fechas con xG falso |
+| Accuracy | **0,503** en holdout, **0,516** en walk-forward (baseline del canvas: 0,426) |
+| Feature más importante | `dif_elo` — la diferencia de rating Elo entre los dos equipos |
+| Modelos comparados | 7 modelos × 3 variantes de datos, incluida una red neuronal |
+| GPU | **Se midió**: pierde 1,7× a 1.140 filas, gana **5,4×** a 114.000 |
 | Tests | Suite completa, con pruebas de fuego para cada hallazgo |
 
-⚠️ **`docs/ML-CANVAS.md` está desactualizado y contradice al canvas del grupo** (el Word):
-dice "no es un producto de apuestas" cuando la propuesta de valor es exactamente generar
-ganancias con apuestas, y usa otras métricas y otro momento de predicción. Hay que
-reconciliarlo antes de entregar.
+### Para entender todo de una
+
+Abrí **[`notebooks/00_recorrido_completo.ipynb`](notebooks/00_recorrido_completo.ipynb)**:
+recorre el proyecto entero paso a paso, con los números a la vista.
+
+### Lo que el modelo NO logra, dicho sin maquillar
+
+- **No le gana al mercado.** Cuando discrepa de las casas de apuestas acierta 0,346 contra
+  0,365 de ellas: no tiene ventaja informativa.
+- **Ninguna estrategia de apuestas resultó rentable.** Todos los ROI son negativos, y el
+  único positivo que apareció quedó dentro del error estándar.
+- Para la propuesta de valor del canvas —un emprendimiento que gane con apuestas— el
+  sistema todavía no la sostiene. Lo que sí sostiene es el ciclo de MLOps completo.
+
+
 
 ---
 

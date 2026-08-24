@@ -178,6 +178,16 @@ class Config:
         return os.getenv("TP_DEVICE", self.training.get("device", "auto"))
 
     @property
+    def modelo(self) -> str:
+        """El modelo de produccion, elegido por medicion. Ver config.yaml."""
+        return self.training.get("modelo", "xgb_gbt")
+
+    @property
+    def datos_entrenamiento(self) -> str:
+        """Que filas se usan como objetivo de entrenamiento (las demas siguen de historia)."""
+        return self.training.get("datos_entrenamiento", "todo")
+
+    @property
     def valid_season(self) -> str:
         """Temporada de early stopping. Sale del train, nunca es el holdout."""
         return self.training.get("valid_season", "2024-25")

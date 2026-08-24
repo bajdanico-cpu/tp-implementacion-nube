@@ -25,6 +25,13 @@ matplotlib==3.11.0
 # --- Tests ---
 pytest==9.1.1
 
+# --- Notebook ---
+# Para abrir notebooks/00_recorrido_completo.ipynb, que recorre todo el proyecto paso a
+# paso. El .ipynb se GENERA desde notebooks/00_recorrido_completo.py: asi el notebook
+# queda versionado como texto legible, los diffs se entienden, y no se commitean salidas
+# de ejecucion que inflan el repo y ensucian los merges.
+jupyterlab==4.6.3
+
 # --- Serving (fase siguiente) ---
 fastapi==0.141.1
 uvicorn==0.41.0
