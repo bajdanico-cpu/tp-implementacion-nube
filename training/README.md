@@ -653,6 +653,102 @@ conclusión apresurada que el resto del proyecto se ocupa de evitar.
 
 ---
 
+## Cuanto tarda entrenar, y por que tan poco
+
+| Modelo | Un fit | Nota |
+|---|---|---|
+| `xgb_gbt` | **8,4 s** con 2.000 rondas | en el pipeline el early stopping corta en ~150, o sea **~0,8 s** |
+| `xgb_rf` | 5,6 s | 300 arboles en paralelo, una sola ronda |
+| `rf_sklearn` | 1,0 s | |
+| `hgb` | 0,5 s | |
+| `logreg` | 0,2 s | |
+
+Que sea rapido no es sospechoso, es aritmetica: **el dataset son 624 KB** (1.004 filas x
+159 features en float32), los arboles tienen profundidad 3, y el early stopping corta en
+~150 rondas de 2.000. Un reentrenamiento completo del modelo de produccion —la pasada de
+early stopping mas el refit de 5 semillas— tarda unos 10 segundos.
+
+Esto es lo que hace **viable el reentreno semanal** del bloque 9: el costo de computo es
+irrelevante. Lo caro no es entrenar, es *decidir si el modelo nuevo es mejor* — y para eso
+no alcanza con una fecha (ver la regla de promocion).
+
+---
+
+## Combinar modelos: probado, y empeora
+
+La pregunta natural es si apilar modelos ayuda. Se implemento stacking como corresponde
+—predicciones **out-of-fold con folds temporales** de los modelos base, y un meta-modelo
+que aprende a combinarlas— no un simple promedio.
+
+| | Accuracy | Log-loss |
+|---|---|---|
+| base: `xgb_gbt` | **0,500** | 1,0428 |
+| base: `xgb_rf` | 0,4895 | 1,0323 |
+| base: `poisson` | 0,4974 | 1,0400 |
+| base: `ordinal` | 0,4632 | 1,1713 |
+| promedio simple | 0,4921 | **1,0319** |
+| stacking, meta lineal | 0,4947 | 1,0332 |
+| **stacking, meta XGBoost** | **0,4737** | **1,0557** |
+| stacking, meta + features originales | 0,4789 | 1,0477 |
+
+**El stacking no mejora, y cuanto mas flexible el meta-modelo, peor.** La razon es el
+tamano: el meta-modelo solo dispone de **793 filas out-of-fold** para aprender a combinar
+12 probabilidades. Con eso, un XGBoost como meta sobreajusta la relacion entre modelos base
+y pierde tres puntos de accuracy.
+
+El promedio simple empata al mejor modelo individual en log-loss (1,0319 contra 1,0323) sin
+aportar nada. Conclusion: **un solo modelo bien regularizado le gana a cualquier
+combinacion**, a esta escala.
+
+---
+
+## La confianza: mal calibrada, pero util para seleccionar
+
+Accuracy por tramo de confianza en el holdout:
+
+| Confianza | n | Accuracy | Confianza media | Desvio |
+|---|---|---|---|---|
+| < 0,40 | 34 | 0,559 | 0,376 | **+0,18** |
+| 0,40 - 0,45 | 70 | 0,471 | 0,426 | +0,05 |
+| 0,45 - 0,50 | 66 | **0,394** | 0,477 | **−0,08** |
+| 0,50 - 0,60 | 123 | 0,496 | 0,541 | −0,05 |
+| > 0,60 | 87 | **0,632** | 0,671 | −0,04 |
+
+La correlacion entre confianza y acierto es apenas **0,098**, y en la franja media el modelo
+se **sobreconfia**: dice 0,477 y acierta 0,394.
+
+Pero como criterio de **seleccion** si funciona:
+
+| Si solo predijeramos... | Accuracy |
+|---|---|
+| el 25 % mas confiado | **0,642** |
+| el 50 % mas confiado | 0,568 |
+| el 75 % mas confiado | 0,519 |
+| todos | 0,511 |
+
+Es directamente aplicable al bloque 6: **actuar solo donde el modelo esta seguro**. Y explica
+el caso de FUL-CHE, un partido de ida y vuelta que termino 2-3: el modelo dio
+`0,377 / 0,260 / 0,363` — practicamente un empate a tres bandas. **Detecto que era
+impredecible**, aunque el argmax fallara.
+
+### `sorpresa_u5` y `sorpresa_u10`
+
+De ahi sale una feature nueva: cuanto se apartaron los ultimos N resultados de un equipo de
+lo que el Elo esperaba, `|real − esperado|` promediado. Mide **que tan impredecible viene
+siendo**, no en que direccion.
+
+Es la version legitima de "que tan bien viene acertando el modelo": usar las predicciones
+propias como feature seria un bucle de realimentacion, y ademas imposible de calcular en
+entrenamiento sin leakage. La expectativa del Elo sale solo de resultados pasados.
+
+Validacion, sin ajustar nada: los mas impredecibles de 2025-26 fueron **CHE, NEW y AVL**;
+los mas predecibles **BUR y BRE** — ser consistentemente malo tambien es predecible.
+
+Aporte medido: log-loss 1,0318 -> 1,0303. Marginal, dentro del ruido. Se conserva porque el
+costo es cero y porque es la unica feature que habla de *confiabilidad* en vez de direccion.
+
+---
+
 ## Persistencia
 
 ```

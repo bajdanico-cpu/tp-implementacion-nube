@@ -80,12 +80,38 @@ def calcular(largo: pd.DataFrame) -> pd.DataFrame:
         rating[r.team_short] = loc + delta
         rating[r.rival_short] = vis - delta
 
-        for eq in (r.team_short, r.rival_short):
-            filas.append({"season": r.season, "fixture_id": r.fixture_id,
-                          "team_short": eq, "kickoff_time": r.kickoff_time,
-                          "elo": rating[eq]})
+        # SORPRESA: cuanto se aparto el resultado de lo que el Elo esperaba, antes de
+        # actualizarlo. |real - esperado| en [0, 1]. Es la version legitima de "que tan
+        # impredecible es este equipo": no usa las predicciones del modelo -- eso seria
+        # un bucle de realimentacion, y ademas imposible de calcular en entrenamiento sin
+        # leakage -- sino la expectativa del Elo, que sale solo de resultados pasados.
+        sorpresa = abs(real_loc - esp_loc)
+
+        filas.append({"season": r.season, "fixture_id": r.fixture_id,
+                      "team_short": r.team_short, "kickoff_time": r.kickoff_time,
+                      "elo": rating[r.team_short], "sorpresa": sorpresa,
+                      "elo_esperado": esp_loc})
+        filas.append({"season": r.season, "fixture_id": r.fixture_id,
+                      "team_short": r.rival_short, "kickoff_time": r.kickoff_time,
+                      "elo": rating[r.rival_short], "sorpresa": sorpresa,
+                      "elo_esperado": 1.0 - esp_loc})
 
     return pd.DataFrame(filas)
+
+
+def ventanas_sorpresa(e: pd.DataFrame) -> pd.DataFrame:
+    """Media movil de la sorpresa: que tan impredecible viene siendo el equipo.
+
+    Un equipo con `sorpresa_u5` alta viene dando resultados que su Elo no anticipaba --
+    para bien o para mal. Es informacion sobre la CONFIABILIDAD de la prediccion, no
+    sobre su direccion, y es justo lo que faltaba: el modelo estaba sobreconfiado en la
+    franja media (decia 0,477 y acertaba 0,394).
+    """
+    d = e.sort_values(["team_short", "kickoff_time"]).copy()
+    g = d.groupby("team_short", sort=False)
+    d["sorpresa_u5"] = g["sorpresa"].transform(lambda s: s.rolling(5, min_periods=1).mean())
+    d["sorpresa_u10"] = g["sorpresa"].transform(lambda s: s.rolling(10, min_periods=1).mean())
+    return d[["season", "fixture_id", "team_short", "sorpresa_u5", "sorpresa_u10"]]
 
 
 def extras(largo: pd.DataFrame) -> pd.DataFrame:
@@ -125,13 +151,16 @@ def extras(largo: pd.DataFrame) -> pd.DataFrame:
 
 
 COLUMNAS = ["elo", "tiros_conc_u5", "tiros_arco_conc_u5", "xg_diff_u5", "xgc_diff_u5",
-            "partidos_14d", "racha"]
+            "partidos_14d", "racha", "sorpresa_u5", "sorpresa_u10"]
 
 
 def construir(largo: pd.DataFrame) -> pd.DataFrame:
     """Todas las features de este módulo, listas para el `merge_asof`."""
     e = calcular(largo)
+    s = ventanas_sorpresa(e)
     x = extras(largo)
-    out = e.merge(x, on=["season", "fixture_id", "team_short", "kickoff_time"],
-                  how="outer", validate="one_to_one")
+    out = (e.drop(columns=["sorpresa", "elo_esperado"])
+            .merge(s, on=["season", "fixture_id", "team_short"], validate="one_to_one")
+            .merge(x, on=["season", "fixture_id", "team_short", "kickoff_time"],
+                   how="outer", validate="one_to_one"))
     return out.rename(columns={"kickoff_time": "hist_kickoff"})

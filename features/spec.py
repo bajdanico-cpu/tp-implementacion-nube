@@ -291,6 +291,16 @@ ESTADO_POR_LADO = (
     ("partidos_14d", "partidos jugados en los 14 dias previos: congestion de calendario"),
     ("racha", "puntos de los ultimos 3 partidos menos el promedio de lo que va de la "
               "temporada. Captura si el equipo esta por encima o por debajo de su nivel"),
+    ("sorpresa_u5", "cuanto se apartaron los ultimos 5 resultados de lo que el Elo "
+                    "esperaba: |real - esperado| promediado. Mide que tan IMPREDECIBLE "
+                    "viene siendo el equipo, no en que direccion. Es informacion sobre la "
+                    "confiabilidad de la prediccion. No usa las predicciones del modelo "
+                    "-- eso seria un bucle de realimentacion -- sino la expectativa del "
+                    "Elo, que sale solo de resultados pasados"),
+    ("sorpresa_u10", "lo mismo sobre 10 partidos: menos ruidoso, mas estructural. Medido "
+                     "en 2025-26, los mas impredecibles fueron CHE, NEW y AVL; los mas "
+                     "predecibles BUR y BRE (ser consistentemente malo tambien es "
+                     "predecible)"),
 )
 
 
@@ -314,7 +324,7 @@ def _dificultad() -> list[Feature]:
 DIFERENCIALES = (
     "pts_u5", "gf_u5", "gc_u5", "xg_u5", "xgc_u5", "pts_def_u5", "pts_med_u5",
     "pts_camp", "pos_tabla_camp", "ppp_camp", "dias_descanso", "n_hist",
-    "elo", "racha",
+    "elo", "racha", "sorpresa_u10",
 )
 
 
