@@ -62,9 +62,9 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 
 ## Resumen
 
-- **Versión del feature set:** `v2.a29de7c7.192`
-- **Features:** 192
-- **Columnas totales:** 214 (192 features + 22 no-features)
+- **Versión del feature set:** `v2.906eed82.220`
+- **Features:** 220
+- **Columnas totales:** 242 (220 features + 22 no-features)
 - **Grano:** un partido = una fila. 1.520 filas (4 temporadas × 380).
 
 | Grupo | Columnas |
@@ -76,10 +76,11 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 | Head-to-head | 10 |
 | Continuidad de plantel | 2 |
 | Elo y estado | 36 |
+| Otras competencias | 24 |
 | Contexto | 10 |
 | Dificultad | 3 |
-| Diferenciales | 17 |
-| **TOTAL DE FEATURES** | **192** |
+| Diferenciales | 21 |
+| **TOTAL DE FEATURES** | **220** |
 
 ## Las 16 estadísticas base
 
@@ -309,6 +310,35 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `visita_sorpresa_u5` | visita | — | `derivada` | cuanto se apartaron los ultimos 5 resultados de lo que el Elo esperaba: \|real - esperado\| promediado. Mide que tan IMPREDECIBLE viene siendo el equipo, no en que direccion. Es informacion sobre la confiabilidad de la prediccion. No usa las predicciones del modelo -- eso seria un bucle de realimentacion -- sino la expectativa del Elo, que sale solo de resultados pasados |
 | `visita_sorpresa_u10` | visita | — | `derivada` | lo mismo sobre 10 partidos: menos ruidoso, mas estructural. Medido en 2025-26, los mas impredecibles fueron CHE, NEW y AVL; los mas predecibles BUR y BRE (ser consistentemente malo tambien es predecible) |
 
+### Otras competencias — 24 columnas
+
+| Columna | Lado | Ventana | Fuente | Cálculo |
+|---|---|---|---|---|
+| `local_partidos_todo_7d` | local | — | `fact_match_comp` | partidos jugados en los 7 dias previos contando TODAS las competencias. La version que solo miraba la Premier dio un resultado nulo, justamente porque no veia los partidos de copa y de Europa: medido sobre 2025-26 son 953 partidos que faltaban |
+| `local_partidos_todo_14d` | local | — | `fact_match_comp` | lo mismo sobre 14 dias |
+| `local_partidos_todo_21d` | local | — | `fact_match_comp` | lo mismo sobre 21: la carga acumulada de tres semanas |
+| `local_partidos_copa_7d` | local | — | `fact_match_comp` | de esos, cuantos NO fueron de liga en los ultimos 7 dias |
+| `local_partidos_copa_14d` | local | — | `fact_match_comp` | idem sobre 14 dias |
+| `local_copas_acumuladas` | local | — | `fact_match_comp` | partidos de FA Cup y EFL Cup jugados en lo que va de la temporada. Solo crece si el equipo avanza, asi que es 'seguir en carrera' convertido en numero |
+| `local_europa_acumuladas` | local | — | `fact_match_comp` | partidos de Champions y Europa League en la temporada |
+| `local_importancia_max` | local | — | `fact_match_comp` | la instancia mas avanzada alcanzada en copa: 1 = primera ronda, 6 = octavos, 7 = cuartos, 8 = semis, 9 = final. Es retrospectivo -- dice hasta donde LLEGO, no hasta donde va a llegar, que no se puede saber sin ver el sorteo |
+| `local_dias_desde_ultimo_todo` | local | — | `fact_match_comp` | dias desde su ultimo partido de cualquier competencia. El `dias_descanso` de liga se equivocaba en los equipos que jugaban entre semana |
+| `local_pts_todo_u5` | local | — | `fact_match_comp` | puntos por partido en los ultimos 5 de CUALQUIER competencia. Comparado con la version de liga es informativo por si mismo: un equipo que rinde distinto en copa esta rotando |
+| `local_gf_todo_u5` | local | — | `fact_match_comp` | goles a favor en los ultimos 5 de cualquier competencia |
+| `local_gc_todo_u5` | local | — | `fact_match_comp` | goles en contra en los ultimos 5 de cualquier competencia |
+| `visita_partidos_todo_7d` | visita | — | `fact_match_comp` | partidos jugados en los 7 dias previos contando TODAS las competencias. La version que solo miraba la Premier dio un resultado nulo, justamente porque no veia los partidos de copa y de Europa: medido sobre 2025-26 son 953 partidos que faltaban |
+| `visita_partidos_todo_14d` | visita | — | `fact_match_comp` | lo mismo sobre 14 dias |
+| `visita_partidos_todo_21d` | visita | — | `fact_match_comp` | lo mismo sobre 21: la carga acumulada de tres semanas |
+| `visita_partidos_copa_7d` | visita | — | `fact_match_comp` | de esos, cuantos NO fueron de liga en los ultimos 7 dias |
+| `visita_partidos_copa_14d` | visita | — | `fact_match_comp` | idem sobre 14 dias |
+| `visita_copas_acumuladas` | visita | — | `fact_match_comp` | partidos de FA Cup y EFL Cup jugados en lo que va de la temporada. Solo crece si el equipo avanza, asi que es 'seguir en carrera' convertido en numero |
+| `visita_europa_acumuladas` | visita | — | `fact_match_comp` | partidos de Champions y Europa League en la temporada |
+| `visita_importancia_max` | visita | — | `fact_match_comp` | la instancia mas avanzada alcanzada en copa: 1 = primera ronda, 6 = octavos, 7 = cuartos, 8 = semis, 9 = final. Es retrospectivo -- dice hasta donde LLEGO, no hasta donde va a llegar, que no se puede saber sin ver el sorteo |
+| `visita_dias_desde_ultimo_todo` | visita | — | `fact_match_comp` | dias desde su ultimo partido de cualquier competencia. El `dias_descanso` de liga se equivocaba en los equipos que jugaban entre semana |
+| `visita_pts_todo_u5` | visita | — | `fact_match_comp` | puntos por partido en los ultimos 5 de CUALQUIER competencia. Comparado con la version de liga es informativo por si mismo: un equipo que rinde distinto en copa esta rotando |
+| `visita_gf_todo_u5` | visita | — | `fact_match_comp` | goles a favor en los ultimos 5 de cualquier competencia |
+| `visita_gc_todo_u5` | visita | — | `fact_match_comp` | goles en contra en los ultimos 5 de cualquier competencia |
+
 ### Contexto — 10 columnas
 
 | Columna | Lado | Ventana | Fuente | Cálculo |
@@ -332,7 +362,7 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `fdr_visita` | visita | — | `fact_fixture` | FDR de FPL para el visitante (team_a_difficulty), escala 1-5 |
 | `fdr_dif` | — | — | `derivada` | fdr_local - fdr_visita |
 
-### Diferenciales — 17 columnas
+### Diferenciales — 21 columnas
 
 | Columna | Lado | Ventana | Fuente | Cálculo |
 |---|---|---|---|---|
@@ -353,6 +383,10 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `dif_racha` | — | — | `derivada` | local_racha - visita_racha |
 | `dif_sorpresa_u10` | — | — | `derivada` | local_sorpresa_u10 - visita_sorpresa_u10 |
 | `dif_xg_por_tiro_u5` | — | — | `derivada` | local_xg_por_tiro_u5 - visita_xg_por_tiro_u5 |
+| `dif_partidos_todo_14d` | — | — | `derivada` | local_partidos_todo_14d - visita_partidos_todo_14d |
+| `dif_copas_acumuladas` | — | — | `derivada` | local_copas_acumuladas - visita_copas_acumuladas |
+| `dif_importancia_max` | — | — | `derivada` | local_importancia_max - visita_importancia_max |
+| `dif_pts_todo_u5` | — | — | `derivada` | local_pts_todo_u5 - visita_pts_todo_u5 |
 
 ## Columnas que NO son features
 

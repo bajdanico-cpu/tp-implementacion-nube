@@ -61,38 +61,16 @@ def _puntos(gf, gc):
 
 
 def preparar(comp: pd.DataFrame) -> pd.DataFrame:
-    """Sólo partidos TERMINADOS, con puntos y goles resueltos. Es la historia utilizable."""
+    """Sólo partidos TERMINADOS, con puntos resueltos. Es la historia utilizable.
+
+    `gf_comp` y `gc_comp` vienen ya resueltos desde `transform/competencias.py`, que los
+    toma de los dos lados del fixture. Resolverlos acá con un self-join perdía todos los
+    partidos contra equipos que no son de Premier: toda Europa y la mayor parte de las
+    copas nacionales, que es justamente la carga que este módulo viene a medir.
+    """
     d = comp[comp["terminado"]].copy()
-
-    # El rival de la misma fila da los goles en contra.
-    rival = d[["fixture_pl_id", "team_short", "gf_comp"]].rename(
-        columns={"team_short": "otro", "gf_comp": "gc_comp"})
-    d = d.merge(rival, on="fixture_pl_id", how="left")
-    d = d[d["team_short"] != d["otro"]].drop(columns="otro")
-
-    # En los partidos de copa contra equipos de otras divisiones no hay fila del rival,
-    # así que el gol en contra queda nulo. Se recupera del propio fixture.
-    falta = d["gc_comp"].isna()
-    if falta.any():
-        d = d.drop(columns="gc_comp")
-        d = d.merge(_goles_rival(comp), on=["fixture_pl_id", "team_short"], how="left")
-
     d["pts_comp"] = [_puntos(a, b) for a, b in zip(d["gf_comp"], d["gc_comp"])]
     return d.sort_values(["team_short", "kickoff_time"]).reset_index(drop=True)
-
-
-def _goles_rival(comp: pd.DataFrame) -> pd.DataFrame:
-    """Goles en contra tomando el otro lado del fixture, incluso si no está en la tabla."""
-    por_fixture = comp.groupby("fixture_pl_id")["gf_comp"].apply(list)
-    filas = []
-    for fid, grupo in comp.groupby("fixture_pl_id"):
-        goles = por_fixture.loc[fid]
-        total = sum(g for g in goles if pd.notna(g))
-        for r in grupo.itertuples():
-            propio = r.gf_comp
-            gc = (total - propio) if (pd.notna(propio) and len(goles) > 1) else np.nan
-            filas.append({"fixture_pl_id": fid, "team_short": r.team_short, "gc_comp": gc})
-    return pd.DataFrame(filas).drop_duplicates(["fixture_pl_id", "team_short"])
 
 
 def construir(hist: pd.DataFrame, objetivos: pd.DataFrame) -> pd.DataFrame:

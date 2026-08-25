@@ -99,14 +99,18 @@ def build() -> pd.DataFrame:
                 gw = x.get("gameweek") or {}
                 fase = (gw.get("competitionPhase") or {}).get("label")
                 terminado = str(x.get("status", "")).upper() == "C"
-                goles = {str(g.get("teamId")): g.get("score") for g in (x.get("goals") or [])}
 
                 for i, e in enumerate(equipos):
                     nom = e["team"]["name"]
                     corto = _resolver(nom, registry)
                     if corto is None:
                         continue  # rival de otra división: no nos interesa su fila
-                    rival = equipos[1 - i]["team"]["name"]
+                    otro = equipos[1 - i]
+                    rival = otro["team"]["name"]
+                    # Los goles del rival se toman ACA, del otro lado del fixture. Hacerlo
+                    # despues con un self-join perdia todos los partidos contra equipos
+                    # que no son de Premier -- o sea TODA Europa, donde ningun rival esta
+                    # en nuestro registro, y la mayor parte de las copas nacionales.
                     filas.append({
                         "season": season,
                         "competencia": comp,
@@ -121,6 +125,7 @@ def build() -> pd.DataFrame:
                         "importancia_ronda": IMPORTANCIA_RONDA.get(fase),
                         "terminado": terminado,
                         "gf_comp": e.get("score"),
+                        "gc_comp": otro.get("score"),
                     })
 
     d = pd.DataFrame(filas)

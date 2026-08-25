@@ -366,6 +366,41 @@ def _estado() -> list[Feature]:
             for lado in LADOS for n, f in ESTADO_POR_LADO]
 
 
+COMPETENCIAS_POR_LADO = (
+    ("partidos_todo_7d", "partidos jugados en los 7 dias previos contando TODAS las "
+                         "competencias. La version que solo miraba la Premier dio un "
+                         "resultado nulo, justamente porque no veia los partidos de copa "
+                         "y de Europa: medido sobre 2025-26 son 953 partidos que faltaban"),
+    ("partidos_todo_14d", "lo mismo sobre 14 dias"),
+    ("partidos_todo_21d", "lo mismo sobre 21: la carga acumulada de tres semanas"),
+    ("partidos_copa_7d", "de esos, cuantos NO fueron de liga en los ultimos 7 dias"),
+    ("partidos_copa_14d", "idem sobre 14 dias"),
+    ("copas_acumuladas", "partidos de FA Cup y EFL Cup jugados en lo que va de la "
+                         "temporada. Solo crece si el equipo avanza, asi que es "
+                         "'seguir en carrera' convertido en numero"),
+    ("europa_acumuladas", "partidos de Champions y Europa League en la temporada"),
+    ("importancia_max", "la instancia mas avanzada alcanzada en copa: 1 = primera ronda, "
+                        "6 = octavos, 7 = cuartos, 8 = semis, 9 = final. Es "
+                        "retrospectivo -- dice hasta donde LLEGO, no hasta donde va a "
+                        "llegar, que no se puede saber sin ver el sorteo"),
+    ("dias_desde_ultimo_todo", "dias desde su ultimo partido de cualquier competencia. "
+                               "El `dias_descanso` de liga se equivocaba en los equipos "
+                               "que jugaban entre semana"),
+    ("pts_todo_u5", "puntos por partido en los ultimos 5 de CUALQUIER competencia. "
+                    "Comparado con la version de liga es informativo por si mismo: un "
+                    "equipo que rinde distinto en copa esta rotando"),
+    ("gf_todo_u5", "goles a favor en los ultimos 5 de cualquier competencia"),
+    ("gc_todo_u5", "goles en contra en los ultimos 5 de cualquier competencia"),
+)
+
+
+def _competencias() -> list[Feature]:
+    """Carga real y forma mirando todas las competencias: 12 x 2 lados = 24."""
+    return [Feature(nombre=f"{lado}_{n}", grupo="Otras competencias",
+                    fuente="fact_match_comp", formula=f, lado=lado)
+            for lado in LADOS for n, f in COMPETENCIAS_POR_LADO]
+
+
 def _dificultad() -> list[Feature]:
     return [
         Feature("fdr_local", "Dificultad", "fact_fixture",
@@ -380,6 +415,7 @@ DIFERENCIALES = (
     "pts_u5", "gf_u5", "gc_u5", "xg_u5", "xgc_u5", "pts_def_u5", "pts_med_u5",
     "pts_camp", "pos_tabla_camp", "ppp_camp", "dias_descanso", "n_hist",
     "elo", "elo_delta_u5", "racha", "sorpresa_u10", "xg_por_tiro_u5",
+    "partidos_todo_14d", "copas_acumuladas", "importancia_max", "pts_todo_u5",
 )
 
 
@@ -396,7 +432,8 @@ def _diferenciales() -> list[Feature]:
 def _build() -> list[Feature]:
     out: list[Feature] = []
     for fn in (_forma, _forma_temp, _forma_cond, _campeonato, _h2h,
-               _continuidad, _estado, _contexto, _dificultad, _diferenciales):
+               _continuidad, _estado, _competencias, _contexto, _dificultad,
+               _diferenciales):
         out.extend(fn())
     nombres = [f.nombre for f in out]
     dupes = {n for n in nombres if nombres.count(n) > 1}
