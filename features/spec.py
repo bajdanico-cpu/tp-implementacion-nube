@@ -298,6 +298,17 @@ ESTADO_POR_LADO = (
                    "`gf_u5` ni `xg_u5` capturan esto por separado"),
     ("xgc_diff_u5", "goles recibidos menos xG concedido en los ultimos 5: lo mismo del "
                     "lado defensivo, incluye el rendimiento del arquero"),
+    ("xg_por_tiro_u5", "xG dividido por tiros, promediado sobre los ultimos 5: la "
+                       "CALIDAD de las situaciones, no la cantidad. 2,0 de xG en 3 "
+                       "ocasiones claras y 2,0 en 20 remates de afuera son cosas "
+                       "distintas y predicen distinto; el xG agregado no las separa. Es "
+                       "la aproximacion gratis al xG a nivel tiro que daria Understat"),
+    ("xgc_por_tiro_u5", "lo mismo del lado defensivo: que tan claras son las situaciones "
+                        "que concede. Un equipo puede conceder muchos remates lejanos "
+                        "(bajo riesgo) o pocas ocasiones claras (alto riesgo)"),
+    ("prop_tiros_arco_u5", "proporcion de tiros que van al arco: punteria y seleccion "
+                           "de remate"),
+    ("prop_tiros_arco_conc_u5", "lo mismo entre los tiros que concede"),
     ("partidos_7d", "partidos de Premier jugados en los 7 dias previos. Detecta el "
                     "'jugo entre semana', que es lo mas cerca que se puede estar de "
                     "identificar un compromiso de copa o de Europa sin el calendario de "
@@ -340,7 +351,7 @@ def _dificultad() -> list[Feature]:
 DIFERENCIALES = (
     "pts_u5", "gf_u5", "gc_u5", "xg_u5", "xgc_u5", "pts_def_u5", "pts_med_u5",
     "pts_camp", "pos_tabla_camp", "ppp_camp", "dias_descanso", "n_hist",
-    "elo", "elo_delta_u5", "racha", "sorpresa_u10",
+    "elo", "elo_delta_u5", "racha", "sorpresa_u10", "xg_por_tiro_u5",
 )
 
 

@@ -156,8 +156,23 @@ def extras(largo: pd.DataFrame) -> pd.DataFrame:
     d["xg_diff"] = d["gf"] - d["xg"]
     d["xgc_diff"] = d["gc"] - d["xgc"]
 
+    # CALIDAD del xG, no cantidad. 2,0 de xG en 3 ocasiones claras y 2,0 en 20 remates de
+    # afuera son cosas distintas y predicen distinto: el primero es un equipo que genera
+    # situaciones, el segundo uno que patea de desesperado. El xG agregado no las separa;
+    # dividirlo por los tiros si.
+    #
+    # Es la aproximacion disponible al xG a nivel TIRO que daria Understat. No es lo
+    # mismo -- el promedio no distingue "una clarisima y muchas malas" de "todas
+    # regulares" -- pero es gratis y sale de datos que ya estan.
+    d["xg_por_tiro"] = d["xg"] / d["tiros"].replace(0, np.nan)
+    d["xgc_por_tiro"] = d["xgc"] / d["tiros_conc"].replace(0, np.nan)
+    # Proporcion de tiros que van al arco: puntería y seleccion de remate.
+    d["prop_tiros_arco"] = d["tiros_arco"] / d["tiros"].replace(0, np.nan)
+    d["prop_tiros_arco_conc"] = d["tiros_arco_conc"] / d["tiros_conc"].replace(0, np.nan)
+
     g = d.groupby("team_short", sort=False)
-    for c in ("tiros_conc", "tiros_arco_conc", "xg_diff", "xgc_diff"):
+    for c in ("tiros_conc", "tiros_arco_conc", "xg_diff", "xgc_diff",
+              "xg_por_tiro", "xgc_por_tiro", "prop_tiros_arco", "prop_tiros_arco_conc"):
         d[f"{c}_u5"] = g[c].transform(lambda s: s.rolling(5, min_periods=1).mean())
 
     # Congestión de calendario, en tres ventanas. Cada una capta algo distinto:
@@ -185,12 +200,16 @@ def extras(largo: pd.DataFrame) -> pd.DataFrame:
     d["racha"] = d["pts_u3_tmp"] - d["pts_exp_tmp"]
 
     cols = ["tiros_conc_u5", "tiros_arco_conc_u5", "xg_diff_u5", "xgc_diff_u5",
+            "xg_por_tiro_u5", "xgc_por_tiro_u5",
+            "prop_tiros_arco_u5", "prop_tiros_arco_conc_u5",
             "partidos_7d", "partidos_14d", "partidos_21d", "racha"]
     return d[["season", "fixture_id", "team_short", "kickoff_time"] + cols]
 
 
 COLUMNAS = ["elo", "elo_delta_u3", "elo_delta_u5", "elo_delta_u10",
             "tiros_conc_u5", "tiros_arco_conc_u5", "xg_diff_u5", "xgc_diff_u5",
+            "xg_por_tiro_u5", "xgc_por_tiro_u5",
+            "prop_tiros_arco_u5", "prop_tiros_arco_conc_u5",
             "partidos_7d", "partidos_14d", "partidos_21d", "racha",
             "sorpresa_u5", "sorpresa_u10"]
 

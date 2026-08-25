@@ -63,8 +63,8 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 ## Resumen
 
 - **Versión del feature set:** `v2`
-- **Features:** 175
-- **Columnas totales:** 197 (175 features + 22 no-features)
+- **Features:** 184
+- **Columnas totales:** 206 (184 features + 22 no-features)
 - **Grano:** un partido = una fila. 1.520 filas (4 temporadas × 380).
 
 | Grupo | Columnas |
@@ -75,11 +75,11 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 | Puntaje de campeonato | 14 |
 | Head-to-head | 10 |
 | Continuidad de plantel | 2 |
-| Elo y estado | 28 |
+| Elo y estado | 36 |
 | Contexto | 10 |
 | Dificultad | 3 |
-| Diferenciales | 16 |
-| **TOTAL DE FEATURES** | **175** |
+| Diferenciales | 17 |
+| **TOTAL DE FEATURES** | **184** |
 
 ## Las 16 estadísticas base
 
@@ -258,7 +258,7 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `local_continuidad_plantel_u5` | local | u5 | `fact_player_gw` | proporción de los minutos de los últimos 5 partidos que jugaron futbolistas que también jugaron el partido MÁS RECIENTE del equipo. 100% leak-free: sólo mira partidos pasados. Se desploma cuando el plantel se renovó, que es justo cuando la forma pasada deja de representar al equipo actual. Medido: entre temporadas rota ~40% de los minutos |
 | `visita_continuidad_plantel_u5` | visita | u5 | `fact_player_gw` | proporción de los minutos de los últimos 5 partidos que jugaron futbolistas que también jugaron el partido MÁS RECIENTE del equipo. 100% leak-free: sólo mira partidos pasados. Se desploma cuando el plantel se renovó, que es justo cuando la forma pasada deja de representar al equipo actual. Medido: entre temporadas rota ~40% de los minutos |
 
-### Elo y estado — 28 columnas
+### Elo y estado — 36 columnas
 
 | Columna | Lado | Ventana | Fuente | Cálculo |
 |---|---|---|---|---|
@@ -270,6 +270,10 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `local_tiros_arco_conc_u5` | local | — | `derivada` | tiros al arco concedidos en los ultimos 5 |
 | `local_xg_diff_u5` | local | — | `derivada` | goles menos xG en los ultimos 5: suerte de definicion. Es fuertemente reversible a la media, asi que un valor alto anticipa una caida. Ni `gf_u5` ni `xg_u5` capturan esto por separado |
 | `local_xgc_diff_u5` | local | — | `derivada` | goles recibidos menos xG concedido en los ultimos 5: lo mismo del lado defensivo, incluye el rendimiento del arquero |
+| `local_xg_por_tiro_u5` | local | — | `derivada` | xG dividido por tiros, promediado sobre los ultimos 5: la CALIDAD de las situaciones, no la cantidad. 2,0 de xG en 3 ocasiones claras y 2,0 en 20 remates de afuera son cosas distintas y predicen distinto; el xG agregado no las separa. Es la aproximacion gratis al xG a nivel tiro que daria Understat |
+| `local_xgc_por_tiro_u5` | local | — | `derivada` | lo mismo del lado defensivo: que tan claras son las situaciones que concede. Un equipo puede conceder muchos remates lejanos (bajo riesgo) o pocas ocasiones claras (alto riesgo) |
+| `local_prop_tiros_arco_u5` | local | — | `derivada` | proporcion de tiros que van al arco: punteria y seleccion de remate |
+| `local_prop_tiros_arco_conc_u5` | local | — | `derivada` | lo mismo entre los tiros que concede |
 | `local_partidos_7d` | local | — | `derivada` | partidos de Premier jugados en los 7 dias previos. Detecta el 'jugo entre semana', que es lo mas cerca que se puede estar de identificar un compromiso de copa o de Europa sin el calendario de esas competencias |
 | `local_partidos_14d` | local | — | `derivada` | partidos jugados en los 14 dias previos: la carga de dos semanas |
 | `local_partidos_21d` | local | — | `derivada` | partidos en 21 dias: la carga acumulada. No es lo mismo un pico aislado que tres semanas seguidas de partido cada tres dias |
@@ -284,6 +288,10 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `visita_tiros_arco_conc_u5` | visita | — | `derivada` | tiros al arco concedidos en los ultimos 5 |
 | `visita_xg_diff_u5` | visita | — | `derivada` | goles menos xG en los ultimos 5: suerte de definicion. Es fuertemente reversible a la media, asi que un valor alto anticipa una caida. Ni `gf_u5` ni `xg_u5` capturan esto por separado |
 | `visita_xgc_diff_u5` | visita | — | `derivada` | goles recibidos menos xG concedido en los ultimos 5: lo mismo del lado defensivo, incluye el rendimiento del arquero |
+| `visita_xg_por_tiro_u5` | visita | — | `derivada` | xG dividido por tiros, promediado sobre los ultimos 5: la CALIDAD de las situaciones, no la cantidad. 2,0 de xG en 3 ocasiones claras y 2,0 en 20 remates de afuera son cosas distintas y predicen distinto; el xG agregado no las separa. Es la aproximacion gratis al xG a nivel tiro que daria Understat |
+| `visita_xgc_por_tiro_u5` | visita | — | `derivada` | lo mismo del lado defensivo: que tan claras son las situaciones que concede. Un equipo puede conceder muchos remates lejanos (bajo riesgo) o pocas ocasiones claras (alto riesgo) |
+| `visita_prop_tiros_arco_u5` | visita | — | `derivada` | proporcion de tiros que van al arco: punteria y seleccion de remate |
+| `visita_prop_tiros_arco_conc_u5` | visita | — | `derivada` | lo mismo entre los tiros que concede |
 | `visita_partidos_7d` | visita | — | `derivada` | partidos de Premier jugados en los 7 dias previos. Detecta el 'jugo entre semana', que es lo mas cerca que se puede estar de identificar un compromiso de copa o de Europa sin el calendario de esas competencias |
 | `visita_partidos_14d` | visita | — | `derivada` | partidos jugados en los 14 dias previos: la carga de dos semanas |
 | `visita_partidos_21d` | visita | — | `derivada` | partidos en 21 dias: la carga acumulada. No es lo mismo un pico aislado que tres semanas seguidas de partido cada tres dias |
@@ -314,7 +322,7 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `fdr_visita` | visita | — | `fact_fixture` | FDR de FPL para el visitante (team_a_difficulty), escala 1-5 |
 | `fdr_dif` | — | — | `derivada` | fdr_local - fdr_visita |
 
-### Diferenciales — 16 columnas
+### Diferenciales — 17 columnas
 
 | Columna | Lado | Ventana | Fuente | Cálculo |
 |---|---|---|---|---|
@@ -334,6 +342,7 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `dif_elo_delta_u5` | — | — | `derivada` | local_elo_delta_u5 - visita_elo_delta_u5 |
 | `dif_racha` | — | — | `derivada` | local_racha - visita_racha |
 | `dif_sorpresa_u10` | — | — | `derivada` | local_sorpresa_u10 - visita_sorpresa_u10 |
+| `dif_xg_por_tiro_u5` | — | — | `derivada` | local_xg_por_tiro_u5 - visita_xg_por_tiro_u5 |
 
 ## Columnas que NO son features
 
