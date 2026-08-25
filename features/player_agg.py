@@ -34,7 +34,7 @@ POSICIONES = {"GK": "arq", "DEF": "def", "MID": "med", "FWD": "del"}
 
 # Columnas que produce team_stats_by_fixture, además de las claves.
 STATS_JUGADOR = ["xg", "xa", "xgc", "pts_arq", "pts_def", "pts_med", "pts_del",
-                 "n_jugadores"]
+                 "n_jugadores", "atajadas", "tasa_atajadas"]
 
 
 def team_stats_by_fixture(players: pd.DataFrame) -> pd.DataFrame:
@@ -53,7 +53,22 @@ def team_stats_by_fixture(players: pd.DataFrame) -> pd.DataFrame:
         xg=("expected_goals", "sum"),
         xa=("expected_assists", "sum"),
         n_jugadores=("minutes", lambda s: int((s > 0).sum())),
+        atajadas=("saves", "sum"),
+        gc_equipo=("goals_conceded", "max"),
     )
+
+    # TASA DE ATAJADAS: el equivalente defensivo de `xg_por_tiro`.
+    #
+    # `xg_por_tiro` mide la CALIDAD de lo que generas; esto mide cuanto de lo que te
+    # llega termina adentro. saves / (saves + goles) es la proporcion de remates al arco
+    # que el arquero detiene: separa "concede poco" de "concede mucho pero lo atajan".
+    #
+    # Son cosas distintas y envejecen distinto: conceder pocos remates es estructural del
+    # equipo y persiste; una tasa de atajadas alta es en buena parte varianza del arquero
+    # y revierte a la media. El modelo puede aprender a descontarla.
+    tiros_al_arco = base["atajadas"] + base["gc_equipo"]
+    base["tasa_atajadas"] = base["atajadas"] / tiros_al_arco.replace(0, np.nan)
+    base = base.drop(columns="gc_equipo")
 
     # Puntos por línea: el pedido explícito del bloque 4 del canvas.
     #

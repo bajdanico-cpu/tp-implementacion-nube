@@ -86,6 +86,17 @@ BASE_STATS: tuple[StatBase, ...] = (
     StatBase("pts_med", "suma de total_points de position == MID", "fact_player_gw"),
     StatBase("pts_del", "suma de total_points de position == FWD", "fact_player_gw"),
     StatBase("n_jugadores", "cantidad de jugadores con minutes > 0", "fact_player_gw"),
+    StatBase("atajadas", "atajadas del arquero en el partido", "fact_player_gw"),
+    StatBase(
+        "tasa_atajadas",
+        "atajadas / (atajadas + goles recibidos): que proporcion de los remates al arco "
+        "termina detenida. Es el equivalente defensivo de xg_por_tiro -- separa "
+        "'concede poco' de 'concede mucho pero lo atajan'. Envejece distinto que las "
+        "otras defensivas: conceder pocos remates es estructural y persiste, mientras "
+        "que una tasa de atajadas alta es en buena parte varianza del arquero y revierte "
+        "a la media",
+        "fact_player_gw",
+    ),
 )
 
 BASE_BY_NAME = {s.nombre: s for s in BASE_STATS}

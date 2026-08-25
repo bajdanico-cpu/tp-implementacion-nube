@@ -63,13 +63,13 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 ## Resumen
 
 - **Versión del feature set:** `v2`
-- **Features:** 184
-- **Columnas totales:** 206 (184 features + 22 no-features)
+- **Features:** 192
+- **Columnas totales:** 214 (192 features + 22 no-features)
 - **Grano:** un partido = una fila. 1.520 filas (4 temporadas × 380).
 
 | Grupo | Columnas |
 |---|---|
-| Forma reciente | 64 |
+| Forma reciente | 72 |
 | Forma intra-temporada | 16 |
 | Forma según condición | 12 |
 | Puntaje de campeonato | 14 |
@@ -79,7 +79,7 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 | Contexto | 10 |
 | Dificultad | 3 |
 | Diferenciales | 17 |
-| **TOTAL DE FEATURES** | **184** |
+| **TOTAL DE FEATURES** | **192** |
 
 ## Las 16 estadísticas base
 
@@ -103,6 +103,8 @@ Se calculan una vez por equipo y por partido, sobre la tabla larga de 3.040 fila
 | 14 | `pts_med` | suma de total_points de position == MID | `fact_player_gw` |
 | 15 | `pts_del` | suma de total_points de position == FWD | `fact_player_gw` |
 | 16 | `n_jugadores` | cantidad de jugadores con minutes > 0 | `fact_player_gw` |
+| 17 | `atajadas` | atajadas del arquero en el partido | `fact_player_gw` |
+| 18 | `tasa_atajadas` | atajadas / (atajadas + goles recibidos): que proporcion de los remates al arco termina detenida. Es el equivalente defensivo de xg_por_tiro -- separa 'concede poco' de 'concede mucho pero lo atajan'. Envejece distinto que las otras defensivas: conceder pocos remates es estructural y persiste, mientras que una tasa de atajadas alta es en buena parte varianza del arquero y revierte a la media | `fact_player_gw` |
 
 Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 
@@ -110,7 +112,7 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 
 ## Features, una por una
 
-### Forma reciente — 64 columnas
+### Forma reciente — 72 columnas
 
 | Columna | Lado | Ventana | Fuente | Cálculo |
 |---|---|---|---|---|
@@ -130,6 +132,8 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `local_pts_med_u3` | local | u3 | `fact_player_gw` | suma de total_points de position == MID. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `local_pts_del_u3` | local | u3 | `fact_player_gw` | suma de total_points de position == FWD. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `local_n_jugadores_u3` | local | u3 | `fact_player_gw` | cantidad de jugadores con minutes > 0. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
+| `local_atajadas_u3` | local | u3 | `fact_player_gw` | atajadas del arquero en el partido. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
+| `local_tasa_atajadas_u3` | local | u3 | `fact_player_gw` | atajadas / (atajadas + goles recibidos): que proporcion de los remates al arco termina detenida. Es el equivalente defensivo de xg_por_tiro -- separa 'concede poco' de 'concede mucho pero lo atajan'. Envejece distinto que las otras defensivas: conceder pocos remates es estructural y persiste, mientras que una tasa de atajadas alta es en buena parte varianza del arquero y revierte a la media. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `local_pts_u5` | local | u5 | `fact_match` | 3 si ganó, 1 si empató, 0 si perdió. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `local_gf_u5` | local | u5 | `fact_match` | goles a favor. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `local_gc_u5` | local | u5 | `fact_match` | goles en contra. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
@@ -146,6 +150,8 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `local_pts_med_u5` | local | u5 | `fact_player_gw` | suma de total_points de position == MID. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `local_pts_del_u5` | local | u5 | `fact_player_gw` | suma de total_points de position == FWD. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `local_n_jugadores_u5` | local | u5 | `fact_player_gw` | cantidad de jugadores con minutes > 0. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
+| `local_atajadas_u5` | local | u5 | `fact_player_gw` | atajadas del arquero en el partido. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
+| `local_tasa_atajadas_u5` | local | u5 | `fact_player_gw` | atajadas / (atajadas + goles recibidos): que proporcion de los remates al arco termina detenida. Es el equivalente defensivo de xg_por_tiro -- separa 'concede poco' de 'concede mucho pero lo atajan'. Envejece distinto que las otras defensivas: conceder pocos remates es estructural y persiste, mientras que una tasa de atajadas alta es en buena parte varianza del arquero y revierte a la media. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `visita_pts_u3` | visita | u3 | `fact_match` | 3 si ganó, 1 si empató, 0 si perdió. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `visita_gf_u3` | visita | u3 | `fact_match` | goles a favor. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `visita_gc_u3` | visita | u3 | `fact_match` | goles en contra. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
@@ -162,6 +168,8 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `visita_pts_med_u3` | visita | u3 | `fact_player_gw` | suma de total_points de position == MID. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `visita_pts_del_u3` | visita | u3 | `fact_player_gw` | suma de total_points de position == FWD. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `visita_n_jugadores_u3` | visita | u3 | `fact_player_gw` | cantidad de jugadores con minutes > 0. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
+| `visita_atajadas_u3` | visita | u3 | `fact_player_gw` | atajadas del arquero en el partido. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
+| `visita_tasa_atajadas_u3` | visita | u3 | `fact_player_gw` | atajadas / (atajadas + goles recibidos): que proporcion de los remates al arco termina detenida. Es el equivalente defensivo de xg_por_tiro -- separa 'concede poco' de 'concede mucho pero lo atajan'. Envejece distinto que las otras defensivas: conceder pocos remates es estructural y persiste, mientras que una tasa de atajadas alta es en buena parte varianza del arquero y revierte a la media. media de los últimos 3 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `visita_pts_u5` | visita | u5 | `fact_match` | 3 si ganó, 1 si empató, 0 si perdió. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `visita_gf_u5` | visita | u5 | `fact_match` | goles a favor. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `visita_gc_u5` | visita | u5 | `fact_match` | goles en contra. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
@@ -178,6 +186,8 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `visita_pts_med_u5` | visita | u5 | `fact_player_gw` | suma de total_points de position == MID. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `visita_pts_del_u5` | visita | u5 | `fact_player_gw` | suma de total_points de position == FWD. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 | `visita_n_jugadores_u5` | visita | u5 | `fact_player_gw` | cantidad de jugadores con minutes > 0. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
+| `visita_atajadas_u5` | visita | u5 | `fact_player_gw` | atajadas del arquero en el partido. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
+| `visita_tasa_atajadas_u5` | visita | u5 | `fact_player_gw` | atajadas / (atajadas + goles recibidos): que proporcion de los remates al arco termina detenida. Es el equivalente defensivo de xg_por_tiro -- separa 'concede poco' de 'concede mucho pero lo atajan'. Envejece distinto que las otras defensivas: conceder pocos remates es estructural y persiste, mientras que una tasa de atajadas alta es en buena parte varianza del arquero y revierte a la media. media de los últimos 5 partidos del equipo, min_periods=1, anclada al corte con merge_asof (nunca shift: shift cuenta partidos, merge_asof cuenta tiempo). Cruza el borde de temporada, así que siempre hay dato, incluso en la GW1 |
 
 ### Forma intra-temporada — 16 columnas
 

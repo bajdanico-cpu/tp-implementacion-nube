@@ -108,6 +108,7 @@ def construir_largo(matches: pd.DataFrame, fixtures: pd.DataFrame,
     largo["dg"] = largo["gf"] - largo["gc"]
 
     cols_jug = ["season", "fixture_id", "team_short", "xg", "xa", "xgc", "n_jugadores",
+                "atajadas", "tasa_atajadas",
                 "xg_available"] + [f"pts_{v}" for v in player_agg.POSICIONES.values()]
     largo = largo.merge(stats_jug[cols_jug], on=CLAVE_LARGO, how="left",
                         validate="one_to_one")
