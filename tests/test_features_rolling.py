@@ -140,7 +140,8 @@ def test_la_ventana_cruzada_tiene_dato_en_la_primera_fecha_y_la_intra_temporada_
 
 def _players(filas: list[dict]) -> pd.DataFrame:
     d = pd.DataFrame(filas)
-    for c in ("expected_goals", "expected_assists", "total_points", "minutes"):
+    for c in ("expected_goals", "expected_assists", "total_points", "minutes",
+              "saves", "goals_conceded"):
         if c not in d:
             d[c] = 0
     if "gameweek" not in d:
@@ -242,3 +243,39 @@ def test_el_xg_falso_de_2022_23_queda_en_nulo_y_no_en_cero():
     assert temprano["xg"].isna().all(), "el cero falso tiene que quedar en NaN"
     assert (~temprano["xg_available"]).all()
     assert tarde["xg"].notna().all() and tarde["xg_available"].all()
+
+
+def test_la_tasa_de_atajadas_es_el_equivalente_defensivo_de_xg_por_tiro():
+    """atajadas / (atajadas + goles) = que proporcion de los remates al arco se detiene.
+
+    Separa "concede poco" de "concede mucho pero lo atajan". Con 3 atajadas y 1 gol, de
+    los 4 remates al arco se detuvieron 3: 0,75.
+    """
+    players = _players([
+        {"season": "S", "fixture_id": 1, "team_short": "AAA", "position": "GK",
+         "saves": 3, "goals_conceded": 1, "minutes": 90},
+        {"season": "S", "fixture_id": 1, "team_short": "AAA", "position": "DEF",
+         "saves": 0, "goals_conceded": 1, "minutes": 90},
+        {"season": "S", "fixture_id": 1, "team_short": "BBB", "position": "GK",
+         "saves": 1, "goals_conceded": 3, "minutes": 90},
+    ])
+    out = player_agg.team_stats_by_fixture(players).set_index("team_short")
+    assert out.loc["AAA", "tasa_atajadas"] == pytest.approx(3 / 4)
+    assert out.loc["BBB", "tasa_atajadas"] == pytest.approx(1 / 4)
+
+
+def test_sin_remates_al_arco_la_tasa_de_atajadas_es_nula_y_no_cero():
+    """Cero atajadas y cero goles no es "atajo el 0%": es que no hubo remates al arco.
+
+    Un cero ahi le ensenaria al modelo que el arquero fallo todo, cuando en realidad no
+    tuvo que intervenir. XGBoost maneja el NaN nativamente.
+    """
+    players = _players([
+        {"season": "S", "fixture_id": 1, "team_short": "AAA", "position": "GK",
+         "saves": 0, "goals_conceded": 0, "minutes": 90},
+        {"season": "S", "fixture_id": 1, "team_short": "BBB", "position": "GK",
+         "saves": 2, "goals_conceded": 0, "minutes": 90},
+    ])
+    out = player_agg.team_stats_by_fixture(players).set_index("team_short")
+    assert pd.isna(out.loc["AAA", "tasa_atajadas"])
+    assert out.loc["BBB", "tasa_atajadas"] == pytest.approx(1.0)
