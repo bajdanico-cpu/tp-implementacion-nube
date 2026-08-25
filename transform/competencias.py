@@ -12,11 +12,17 @@ porque no tienen historia en nuestro sistema y forzarlos a un `short_name` inven
 peor que dejarlos anónimos: lo que importa de un partido de copa es **que se jugó**, no
 contra quién.
 
-⚠️ Los nombres de esta API son los oficiales completos (`Manchester City`,
-`Tottenham Hotspur`) mientras que nuestro registro usa los cortos de FPL (`Man City`,
-`Spurs`). Siete de veinte no cruzaban. Peor: `resolve` quita sufijos genéricos, así que
-`Manchester City` colapsaba a `manchester` y colisionaba con `Manchester United`. De ahí el
-mapa explícito de abajo, que es la misma solución que ya existe para football-data.
+**La clave de equipo sale de `club.abbr`, no del nombre.** Los nombres de esta API son los
+oficiales completos (`Manchester City`, `Tottenham Hotspur`) mientras que nuestro registro
+usa los cortos de FPL (`Man City`, `Spurs`): siete de veinte no cruzaban, y `Manchester
+City` colapsaba a `manchester` colisionando con `Manchester United` porque `resolve` quita
+sufijos genéricos.
+
+Pero la API trae `club.abbr` y **coincide exactamente con nuestro `short_name`**: verificado
+sobre las cinco temporadas, 27 abreviaturas contra 27 `short_name`, cero discrepancias.
+Usarla evita una tabla de alias mantenida a mano, que es justo el tipo de cosa que se
+desactualiza en silencio cuando asciende un equipo nuevo. El emparejamiento por nombre queda
+sólo como respaldo.
 """
 
 from __future__ import annotations
@@ -35,29 +41,6 @@ log = get_logger(__name__)
 
 TABLA = "fact_match_comp"
 
-# Nombre oficial de pulselive -> short_name canónico. Sólo los que no resuelven solos.
-ALIAS = {
-    "Brighton & Hove Albion": "BHA",
-    "Leeds United": "LEE",
-    "Manchester City": "MCI",
-    "Manchester United": "MUN",
-    "Newcastle United": "NEW",
-    "Nottingham Forest": "NFO",
-    "Tottenham Hotspur": "TOT",
-    "Wolverhampton Wanderers": "WOL",
-    "West Ham United": "WHU",
-    "Sheffield United": "SHU",
-    "Luton Town": "LUT",
-    "Ipswich Town": "IPS",
-    "Coventry City": "COV",
-    "Hull City": "HUL",
-    "Leicester City": "LEI",
-    "Norwich City": "NOR",
-    "Cardiff City": "CAR",
-    "Stoke City": "STK",
-    "Swansea City": "SWA",
-}
-
 # Peso de la instancia: más adelante en el torneo, más carga y más importancia. Se usa
 # como feature ordinal, no como etiqueta categórica.
 IMPORTANCIA_RONDA = {
@@ -67,12 +50,17 @@ IMPORTANCIA_RONDA = {
 }
 
 
-def _resolver(nombre: str, registry) -> str | None:
-    """short_name canónico, o None si el equipo no es de Premier en la ventana."""
-    if nombre in ALIAS:
-        return ALIAS[nombre]
+def _resolver(equipo: dict, registry, conocidos: set[str]) -> str | None:
+    """short_name canónico, o None si el equipo no es de Premier en la ventana.
+
+    Primero `club.abbr`, que la API ya entrega en nuestro formato. El emparejamiento por
+    nombre queda de respaldo para el caso improbable de que falte la abreviatura.
+    """
+    abbr = ((equipo.get("club") or {}).get("abbr") or "").strip().upper()
+    if abbr and abbr in conocidos:
+        return abbr
     try:
-        return team_mapping.resolve(nombre, registry)
+        return team_mapping.resolve(equipo.get("name", ""), registry)
     except Exception:  # noqa: BLE001 — un equipo de otra división no es un error
         return None
 
@@ -83,7 +71,10 @@ def _leer(season: str, nombre: str) -> list[dict]:
 
 
 def build() -> pd.DataFrame:
+    from common.storage import read_table
+
     registry = team_mapping.build_registry()
+    conocidos = set(read_table("dim_team")["short_name"])
     filas = []
 
     for season in CFG.seasons_to_ingest():
@@ -101,8 +92,7 @@ def build() -> pd.DataFrame:
                 terminado = str(x.get("status", "")).upper() == "C"
 
                 for i, e in enumerate(equipos):
-                    nom = e["team"]["name"]
-                    corto = _resolver(nom, registry)
+                    corto = _resolver(e["team"], registry, conocidos)
                     if corto is None:
                         continue  # rival de otra división: no nos interesa su fila
                     otro = equipos[1 - i]
@@ -118,7 +108,8 @@ def build() -> pd.DataFrame:
                         "fixture_pl_id": int(x["id"]),
                         "kickoff_time": pd.to_datetime(ms, unit="ms", utc=True),
                         "team_short": corto,
-                        "rival_short": _resolver(rival, registry),
+                        "rival_short": _resolver(otro["team"], registry, conocidos),
+                        "team_id_pl": int(float(e["team"]["id"])),
                         "rival_nombre": rival,
                         "es_local": i == 0,
                         "ronda": fase,
