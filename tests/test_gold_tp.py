@@ -24,8 +24,25 @@ TEMPORADAS_CERRADAS = ("2022-23", "2023-24", "2024-25", "2025-26")
 # ---------------------------------------------------------------------------
 
 def test_gold_tiene_una_fila_por_partido(gold_tp):
-    assert len(gold_tp) == 1520
+    """Una fila por partido jugado, sin duplicados.
+
+    No se fija un total: Gold CRECE cada fecha, porque los partidos de la temporada en
+    curso entran para servir de historia. Fijar 1.520 funcionaba mientras el dataset
+    estaba congelado y se rompio el dia que arranco 2026-27 -- que es exactamente el tipo
+    de supuesto que un test tiene que atrapar.
+    """
+    cerradas = len(TEMPORADAS_CERRADAS) * 380
+    assert len(gold_tp) >= cerradas
     assert not gold_tp.duplicated(spec.CLAVE_PARTIDO).any()
+
+
+def test_la_temporada_en_curso_no_entra_al_entrenamiento(gold_tp):
+    """Sus partidos estan en Gold como historia, pero no como objetivo de entrenamiento."""
+    actual = gold_tp[gold_tp["split"] == "actual"]
+    if actual.empty:
+        pytest.skip("todavia no arranco la temporada en curso")
+    assert not set(actual["season"]) & set(CFG.seasons_for_training())
+    assert CFG.holdout_season not in set(actual["season"])
 
 
 @pytest.mark.parametrize("season", TEMPORADAS_CERRADAS)

@@ -28,6 +28,12 @@ from features.team_form import pegar_asof
 
 STATS = ["pts", "gf", "gc"]
 
+# Mismo problema que `n_hist`: son contadores acumulados que crecen con cada temporada.
+# En el train `h2h_n` llegaba a 5 y en 2026-27 ya vale 8. El techo se fija en lo que el
+# entrenamiento alcanzo a ver, que es donde la feature deja de discriminar.
+TECHO_N = 4          # dos temporadas completas de enfrentamientos
+TECHO_N_COND = 2     # dos temporadas siendo local contra ese rival
+
 
 def vista_dirigida(largo: pd.DataFrame) -> pd.DataFrame:
     """Una fila por (equipo, rival, partido), con los números desde la óptica del equipo."""
@@ -93,6 +99,6 @@ def construir(largo: pd.DataFrame, objetivos: pd.DataFrame) -> pd.DataFrame:
         res = res.merge(loc, on=CLAVE, validate="one_to_one")
         res = res.merge(vis, on=CLAVE, validate="one_to_one")
 
-    for c in ("h2h_n", "h2h_cond_n"):
-        res[c] = res[c].fillna(0).astype("int64")
+    for c, techo in (("h2h_n", TECHO_N), ("h2h_cond_n", TECHO_N_COND)):
+        res[c] = res[c].fillna(0).clip(upper=techo).astype("int64")
     return res

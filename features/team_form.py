@@ -48,6 +48,10 @@ BASE = [s.nombre for s in spec.BASE_STATS]
 
 CLAVE_LARGO = ["season", "fixture_id", "team_short"]
 
+# Techo de los contadores acumulados, para que no crezcan sin limite con el tiempo.
+# 38 = una temporada completa: a partir de ahi "cuanta historia tiene" ya no discrimina.
+TECHO_N_HIST = 38
+
 
 # ---------------------------------------------------------------------------
 # 1 · El corte
@@ -147,7 +151,16 @@ def historia_general(largo: pd.DataFrame) -> pd.DataFrame:
         out = pd.concat([out, extra.drop(columns=["team_short", "hist_kickoff"])], axis=1)
 
     d = largo.sort_values(["team_short", "kickoff_time"])
-    out["n_hist"] = d.groupby("team_short").cumcount().to_numpy() + 1
+    n = d.groupby("team_short").cumcount().to_numpy() + 1
+    # TECHO. `n_hist` es un contador acumulado: crece para siempre a medida que el
+    # dataset envejece. En el train llegaba a 113 y en la fecha 2 de 2026-27 ya vale 153,
+    # un valor que el modelo nunca vio -- y que va a ser peor cada semana. Es train/serve
+    # skew silencioso, del tipo que no rompe nada y sólo degrada.
+    #
+    # Lo que la feature aporta es "cuanta historia tiene este equipo", y eso satura: con
+    # una temporada completa ya se sabe todo lo que hay que saber. Mas alla del techo el
+    # numero es una marca temporal disfrazada de feature.
+    out["n_hist"] = np.minimum(n, TECHO_N_HIST)
     return out
 
 

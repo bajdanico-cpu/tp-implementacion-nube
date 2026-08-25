@@ -24,7 +24,7 @@ import pandas as pd
 from common.config import CFG
 from common.logging_setup import get_logger, setup
 from common.storage import read_raw, write_table
-from transform import team_mapping
+from transform import fpl_live, team_mapping
 
 log = get_logger(__name__)
 
@@ -94,6 +94,11 @@ PLAYER_COLS = [
 # post-partido en lugar de la predicción que los managers veían antes del deadline.
 # No se guarda para que no exista la tentación de usarlo.
 DROPPED_LEAKY = ["xP"]
+
+# Nombres de vaastav -> el esquema canonico de fact_player_gw, que es tambien el que
+# produce `transform/fpl_live.py` desde los snapshots de la API.
+RENOMBRE_VAASTAV = {"GW": "gameweek", "name": "player_name",
+                    "element": "fpl_player_id", "fixture": "fixture_id"}
 
 # `AM` (Assistant Manager) no es una posición: son los DT. FPL los hizo elegibles
 # con un chip que existió sólo entre la GW23 de 2024-25 y el final de esa temporada
@@ -276,16 +281,30 @@ def build_fact_player_gw(dim: pd.DataFrame) -> pd.DataFrame:
                 f"[{season}] {unmapped.sum()} filas de jugador con equipo sin mapear."
             )
 
+        # El renombrado va ACA, no despues del concat: `fpl_live` ya produce estos
+        # nombres, y renombrar al final dejaria dos columnas `gameweek`, dos
+        # `player_name`, etc.
+        out = out.rename(columns=RENOMBRE_VAASTAV)
         frames.append(out)
+
+    # vaastav no publica la temporada en curso a tiempo: gap mediano de 10 dias, maximo
+    # de 96. Los snapshots de /event/{GW}/live/ que guarda la ingesta cubren ese hueco y
+    # traen las mismas estadisticas, xG incluido. Sin esto, las doce features derivadas
+    # de jugadores llegan VACIAS a produccion.
+    for season in CFG.seasons_to_ingest():
+        if any(f["season"].iloc[0] == season for f in frames if len(f)):
+            continue
+        vivo = fpl_live.build(season, dim)
+        if vivo is not None and len(vivo):
+            frames.append(vivo)
 
     if not frames:
         raise FileNotFoundError(
-            "No hay ningún merged_gw.csv en Bronze para construir fact_player_gw."
+            "No hay ningún merged_gw.csv ni snapshot de event_live en Bronze "
+            "para construir fact_player_gw."
         )
 
     fact = pd.concat(frames, ignore_index=True)
-    fact = fact.rename(columns={"GW": "gameweek", "name": "player_name",
-                                "element": "fpl_player_id", "fixture": "fixture_id"})
 
     n_managers = (~fact["position"].isin(PLAYER_POSITIONS)).sum()
     if n_managers:

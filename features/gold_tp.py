@@ -78,8 +78,23 @@ def _a_ancho(largo_feats: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     return salida
 
 
-def construir() -> pd.DataFrame:
-    """Arma la tabla Gold completa desde Silver."""
+def construir(objetivos: pd.DataFrame | None = None,
+              con_target: bool = True) -> pd.DataFrame:
+    """Arma la tabla Gold desde Silver.
+
+    Con los valores por defecto produce la tabla histórica: un objetivo por cada partido
+    jugado, con su target. Es lo que consume el entrenamiento.
+
+    Pasando `objetivos` se calculan las mismas features para **partidos que todavía no se
+    jugaron** — el camino de inferencia. La historia sigue saliendo de `largo`, que sólo
+    contiene partidos terminados, así que el `merge_asof` del corte hace exactamente el
+    mismo trabajo. Con `con_target=False` se omiten las columnas de resultado, que para un
+    partido futuro no existen.
+
+    Que las dos rutas compartan este cuerpo no es prolijidad: es lo que garantiza que las
+    features de producción se calculen igual que las de entrenamiento. Dos
+    implementaciones paralelas es como se produce el train/serve skew.
+    """
     matches = read_table("fact_match")
     fixtures = read_table("fact_fixture")
     players = read_table("fact_player_gw")
@@ -90,7 +105,7 @@ def construir() -> pd.DataFrame:
     log.info("Tabla larga equipo-partido: %d filas", len(largo))
 
     cortes = tf.cortes_por_fecha(fixtures)
-    obj = _objetivos(largo, cortes)
+    obj = _objetivos(largo, cortes) if objetivos is None else objetivos.copy()
     obj_lado = _objetivos_por_lado(obj)
 
     # --- historias, cada una con su clave de agrupación ---
@@ -155,21 +170,40 @@ def construir() -> pd.DataFrame:
 
     # `xg_available` es del partido, no de un lado: si el xG viene en cero, viene en cero
     # para los dos equipos. Se toma una vez.
-    xga = largo[largo["es_local"]][CLAVE + ["xg_available"]]
-    gold = gold.merge(xga, on=CLAVE, validate="one_to_one")
+    # `xg_available` marca si el partido tiene xG utilizable. Cubre dos casos distintos:
+    # el cero hardcodeado de 2022-23 (que enmascara `player_agg`) y la ausencia lisa y
+    # llana, que es lo que pasa con la temporada en curso mientras vaastav no publica.
+    xga = largo[largo["es_local"]][CLAVE + ["xg", "xg_available"]].copy()
+    xga["xg_available"] = xga["xg_available"].fillna(False) & xga["xg"].notna()
+    # LEFT, no inner: en inferencia los objetivos son partidos que todavia no se jugaron,
+    # asi que no estan en `largo`. Con un inner desaparecerian y la matriz saldria vacia.
+    gold = gold.merge(xga.drop(columns="xg"), on=CLAVE, how="left", validate="one_to_one")
+    gold["xg_available"] = gold["xg_available"].fillna(False)
 
     gold = _posiciones(gold, h_cmp, cortes, largo, obj)
     gold = gold.merge(h2h.construir(largo, obj), on=CLAVE, validate="one_to_one")
     gold = _campeonato_al_arranque(gold)
-    gold = _target_y_mercado(gold, matches, largo)
+    if con_target:
+        gold = _target_y_mercado(gold, matches, largo)
     gold = _dificultad(gold, fixtures)
     gold = _diferenciales(gold)
 
+    # El prior se ajusta SIEMPRE con las temporadas de train, tambien cuando se esta
+    # infiriendo: recalcularlo con datos nuevos seria train/serve skew.
     prior = cold_start.ajustar_prior(largo, flags, CFG.seasons_for_training())
     gold = cold_start.aplicar_prior(gold, prior)
     gold.attrs["prior_ascendidos"] = prior
 
-    gold["split"] = np.where(gold["season"] == CFG.holdout_season, "holdout", "train")
+    # La temporada en curso NO es train: entra a Gold para que sus partidos jugados
+    # sirvan de historia, pero `dataset.preparar` sólo toma las de `seasons_for_training`.
+    if con_target:
+        gold["split"] = np.select(
+            [gold["season"] == CFG.holdout_season,
+             gold["season"].isin(CFG.seasons_for_training())],
+            ["holdout", "train"], default="actual")
+    else:
+        gold["split"] = "inferencia"
+
     gold["feature_set_version"] = spec.FEATURE_SET_VERSION
     gold["gold_built_at"] = utc_stamp()
     return gold

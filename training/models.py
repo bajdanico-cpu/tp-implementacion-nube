@@ -35,7 +35,7 @@ import numpy as np
 from common.config import CFG
 from training.device import DeviceInfo
 
-MODELOS = ("xgb_gbt", "xgb_rf", "hgb", "logreg")
+MODELOS = ("xgb_gbt", "xgb_rf", "rf_sklearn", "hgb", "logreg")
 
 # Alternativos, en training/models_alt.py: Poisson bivariado (deriva el 1X2 de las
 # distribuciones de goles), logit ordinal (trata el empate como la franja entre dos
@@ -81,6 +81,27 @@ def construir(nombre: str, info: DeviceInfo, seed: int | None = None,
     """Fábrica de modelos."""
     if nombre not in MODELOS:
         raise ValueError(f"Modelo desconocido: {nombre!r}. Válidos: {MODELOS}")
+
+    if nombre == "rf_sklearn":
+        # El Random Forest "de verdad", para contrastar contra `xgb_rf`, que es XGBoost
+        # en modo bosque. Diferencias que importan:
+        #   - sklearn NO maneja NaN: hay que imputar, y eso borra la senial de "este
+        #     equipo no tiene historia", que en este dataset es informacion real.
+        #   - submuestrea features por nodo igual que xgb_rf, pero usa criterio de Gini
+        #     en vez de la funcion de perdida con regularizacion.
+        #   - se serializa con joblib (fragil entre versiones), no en un formato nativo
+        #     portable. Para servir en Cloud Run eso es una desventaja concreta.
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.impute import SimpleImputer
+        from sklearn.pipeline import Pipeline
+
+        return Pipeline([
+            ("imp", SimpleImputer(strategy="median")),
+            ("rf", RandomForestClassifier(
+                n_estimators=400, max_depth=8, min_samples_leaf=10,
+                max_features="sqrt", n_jobs=info.n_jobs or -1,
+                random_state=CFG.seed if seed is None else seed)),
+        ])
 
     if nombre == "hgb":
         # HistGradientBoosting de scikit-learn. Mismo espíritu que XGBoost pero otra
