@@ -749,6 +749,50 @@ costo es cero y porque es la unica feature que habla de *confiabilidad* en vez d
 
 ---
 
+## Dos modelos: el que se reporta y el que sirve
+
+Con 1.004 filas de entrenamiento, mantener 380 partidos afuera para siempre es caro — y
+son ademas **los mas recientes**, los mas parecidos a lo que viene. Pero incorporarlos
+destruye la evidencia. La salida es tener los dos, con la separacion explicita:
+
+| | Entrena hasta | Filas | Para que |
+|---|---|---|---|
+| **evaluacion** | 2024-25 | 1.004 | **Es el que se REPORTA.** Justifica cada decision de disenio. `python -m training.run --sin-holdout` |
+| **produccion** | 2025-26 | **1.384** | **Es el que SIRVE.** Su unico test honesto es la temporada en curso |
+
+El holdout se reservo para **elegir**: modelo, features, hiperparametros. Esa funcion ya la
+cumplio. Lo que no se puede hacer es seguir usandolo como prueba de generalizacion despues
+de haberlo entrenado — por eso el `metadata.json` guarda `incluye_holdout` y
+`metricas_son_de_generalizacion`, y hay un test que verifica la coherencia.
+
+**La temporada en curso NUNCA entra**, ni siquiera en produccion. Sus partidos jugados
+entran a Gold para servir de historia a las fechas siguientes, pero usarlos como objetivo
+dejaria al proyecto sin ninguna evaluacion limpia. Tambien hay un test.
+
+### El test disponible: la GW1 de 2026-27
+
+Diez partidos que ninguna de las dos versiones vio.
+
+| | Filas de train | Aciertos | Accuracy | Log-loss |
+|---|---|---|---|---|
+| evaluacion (hasta 24-25) | 1.004 | **5/10** | 0,500 | 1,1435 |
+| **produccion (hasta 25-26)** | **1.384** | 4/10 | 0,400 | **1,0108** |
+
+Las dos lecturas apuntan en direcciones opuestas, y vale entender por que:
+
+- **La diferencia en aciertos es UN partido**: FUL-CHE, donde evaluacion dio 0,369 al
+  visitante y produccion 0,337 al local. Los dos, practicamente un empate a tres bandas.
+  Con n=10 un partido son diez puntos de accuracy: es ruido puro.
+- **El log-loss mejora 12 %** (1,144 -> 1,011). Esa metrica usa la probabilidad completa
+  en vez del argmax, asi que con muestras chicas es mucho menos ruidosa. Los 380 partidos
+  extra mejoraron la **calibracion**.
+
+La conclusion razonable es que sumar el holdout ayuda, pero con diez partidos no se puede
+afirmar. Por eso existe `monitoring/temporada_actual.py`: la respuesta se acumula sola,
+diez partidos por semana.
+
+---
+
 ## Persistencia
 
 ```

@@ -7,6 +7,8 @@ y el de la promoción por una sola fecha.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -304,3 +306,51 @@ def test_el_orden_de_features_se_persiste_en_el_metadata():
     assert len(spec.FEATURES) == len(set(spec.FEATURES)), "hay features duplicadas"
     # El contrato tiene que ser una lista (ordenada), no un set.
     assert isinstance(spec.FEATURES, list)
+
+
+# ---------------------------------------------------------------------------
+# La disciplina del holdout
+# ---------------------------------------------------------------------------
+
+def test_la_temporada_en_curso_nunca_entra_al_entrenamiento():
+    """Es el unico test honesto que queda: si entrara, no quedaria ninguno.
+
+    El holdout puede incorporarse al entrenamiento una vez que cumplio su funcion de
+    elegir. La temporada en curso NO: sus partidos entran a Gold para servir de historia,
+    pero usarlos como objetivo destruiria la unica evaluacion no contaminada.
+    """
+    from common.config import CFG
+
+    for incluir in (False, True):
+        temporadas = CFG.seasons_a_entrenar(incluir)
+        assert CFG.current_season not in temporadas
+
+
+def test_incluir_holdout_suma_la_temporada_reservada():
+    from common.config import CFG
+
+    sin = CFG.seasons_a_entrenar(False)
+    con = CFG.seasons_a_entrenar(True)
+    assert CFG.holdout_season not in sin
+    assert CFG.holdout_season in con
+    assert set(sin) < set(con)
+
+
+def test_el_modelo_de_produccion_declara_que_sus_metricas_no_generalizan():
+    """Un modelo entrenado con el holdout no puede reportar el holdout como evidencia.
+
+    El metadata lo deja escrito para que nadie lea esos numeros como generalizacion seis
+    meses despues.
+    """
+    import glob
+    import json
+
+    from common.config import CFG
+
+    dirs = sorted(glob.glob(f"models/{CFG.modelo}/2*"))
+    if not dirs:
+        pytest.skip("no hay modelo persistido")
+    meta = json.loads((Path(dirs[-1]) / "metadata.json").read_text(encoding="utf-8"))
+    if "incluye_holdout" not in meta:
+        pytest.skip("modelo guardado antes de que existiera el flag")
+    assert meta["metricas_son_de_generalizacion"] is not meta["incluye_holdout"]

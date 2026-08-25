@@ -124,6 +124,24 @@ training:
   #                   pero al agregar Elo la ventaja se diluye y rompe a los lineales.
   datos_entrenamiento: "sin_xg_falso"
 
+  # ¿El modelo de PRODUCCION incluye el holdout en el entrenamiento?
+  #
+  # El holdout 2025-26 se reservó para ELEGIR: modelo, features e hiperparámetros. Esa
+  # función ya la cumplió. Mantenerlo afuera para siempre desperdicia 380 partidos, y
+  # ademas son los MAS RECIENTES -- los mas parecidos a lo que viene. Con 1.004 filas de
+  # train, sumar 380 es un 38% mas de datos.
+  #
+  # La disciplina que hay que mantener: una vez que el modelo de produccion vio 2025-26,
+  # **sus numeros sobre 2025-26 dejan de ser evidencia de generalizacion**. Por eso
+  # conviven dos modelos:
+  #
+  #   evaluacion  entrena hasta 2024-25, se mide en 2025-26. Es el que se REPORTA, y el
+  #               que justifica cada decision de disenio. Reproducible con
+  #               `python -m training.run --sin-holdout`.
+  #   produccion  entrena hasta 2025-26 inclusive. Es el que SIRVE. Su unico test honesto
+  #               es la temporada en curso, fecha a fecha.
+  incluir_holdout: true
+
   # "auto" prueba CUDA y cae a CPU si falla; "cuda" explicito LEVANTA si no hay GPU
   # (explicito es explicito); "cpu" fuerza CPU. Pisable con la variable TP_DEVICE.
   device: "auto"

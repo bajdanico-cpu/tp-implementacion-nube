@@ -161,7 +161,18 @@ def preparar(gold: pd.DataFrame | None = None,
 
 
 def train_completo(gold: pd.DataFrame, features: list[str],
-                   datos: str | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """Train + validación juntos, para el refit final con el nº de rondas ya fijado."""
-    d = filtrar_train(gold[gold["season"].isin(CFG.seasons_for_training())], datos)
+                   datos: str | None = None,
+                   incluir_holdout: bool | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Todas las filas de entrenamiento, para el refit final con las rondas ya fijadas.
+
+    Con `incluir_holdout` se suma la temporada reservada. Es lo que hace el modelo de
+    PRODUCCION: el holdout ya cumplio su funcion de elegir, y con 1.004 filas sumar 380
+    -- ademas las mas recientes -- es un 38% mas de datos.
+
+    El modelo de EVALUACION no lo incluye, porque sus numeros sobre 2025-26 tienen que
+    seguir significando algo.
+    """
+    temporadas = CFG.seasons_a_entrenar(incluir_holdout)
+    d = filtrar_train(gold[gold["season"].isin(temporadas)], datos)
+    log.info("Refit final sobre %s: %d filas", temporadas, len(d))
     return matriz(d, features), codificar(d["target_1x2"])

@@ -56,8 +56,15 @@ def predecir(entrenados: list, X) -> np.ndarray:
 
 
 def evaluar_holdout(nombre: str, info, features: list[str] | None = None,
-                    gold: pd.DataFrame | None = None) -> dict:
-    """La foto del canvas: entrenar hasta 2024-25 y evaluar sobre 2025-26."""
+                    gold: pd.DataFrame | None = None,
+                    incluir_holdout: bool = False) -> dict:
+    """Entrena y evalua sobre el holdout 2025-26.
+
+    ⚠️ Con `incluir_holdout=True` el modelo entrena CON el holdout, asi que las metricas
+    que devuelve son **de entrenamiento, no de generalizacion**. Se usa unicamente para
+    producir el artefacto de produccion; el numero que se reporta sale siempre de la
+    variante sin holdout.
+    """
     gold = dataset.cargar() if gold is None else gold
     features = features or spec.FEATURES
     sp = dataset.preparar(gold, features)
@@ -68,7 +75,8 @@ def evaluar_holdout(nombre: str, info, features: list[str] | None = None,
 
     # 2) Refit con TODO el train (incluida la de validación), con el nº de rondas ya fijo.
     params = {"n_estimators": best + 1} if best else None
-    X_full, y_full = dataset.train_completo(gold, features)
+    X_full, y_full = dataset.train_completo(gold, features,
+                                            incluir_holdout=incluir_holdout)
     entrenados, _ = entrenar(nombre, X_full, y_full, info, params=params)
 
     proba = predecir(entrenados, sp.X_test)
@@ -80,6 +88,8 @@ def evaluar_holdout(nombre: str, info, features: list[str] | None = None,
     rep["baselines"] = _baselines(sp.filas_test)
     rep["calibracion"] = metrics.curva_de_confiabilidad(
         sp.y_test_txt, proba).to_dict("records")
+    rep["incluye_holdout"] = bool(incluir_holdout)
+    rep["metricas_son_de_generalizacion"] = not incluir_holdout
     rep["criterio_bloque5"] = {
         "accuracy_baseline_prior": rep["baselines"]["prior_de_clase"]["accuracy"],
         "cumple": bool(rep["accuracy"] > rep["baselines"]["prior_de_clase"]["accuracy"]),

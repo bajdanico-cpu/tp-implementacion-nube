@@ -188,6 +188,24 @@ class Config:
         return self.training.get("datos_entrenamiento", "todo")
 
     @property
+    def incluir_holdout(self) -> bool:
+        """Si el modelo de produccion entrena tambien con el holdout. Ver config.yaml."""
+        return bool(self.training.get("incluir_holdout", False))
+
+    def seasons_a_entrenar(self, incluir_holdout: bool | None = None) -> list[str]:
+        """Temporadas que entran como objetivo de entrenamiento.
+
+        Con `incluir_holdout` se suma la temporada reservada. NUNCA se incluye la
+        temporada en curso: sus partidos entran a Gold para servir de historia, pero
+        usarlos como objetivo destruiria el unico test honesto que queda.
+        """
+        s = list(self.seasons_for_training())
+        usar = self.incluir_holdout if incluir_holdout is None else incluir_holdout
+        if usar and self.holdout_season not in s:
+            s.append(self.holdout_season)
+        return s
+
+    @property
     def valid_season(self) -> str:
         """Temporada de early stopping. Sale del train, nunca es el holdout."""
         return self.training.get("valid_season", "2024-25")

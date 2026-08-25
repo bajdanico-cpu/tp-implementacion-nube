@@ -47,8 +47,9 @@ def _importancias(entrenados, features: list[str]) -> pd.DataFrame:
             .sort_values("ganancia", ascending=False).reset_index(drop=True))
 
 
-def correr_modelo(nombre: str, info, features: list[str], gold, guardar: bool) -> dict:
-    res = evaluate.evaluar_holdout(nombre, info, features, gold)
+def correr_modelo(nombre: str, info, features: list[str], gold, guardar: bool,
+                  incluir_holdout: bool = False) -> dict:
+    res = evaluate.evaluar_holdout(nombre, info, features, gold, incluir_holdout)
     rep, sp = res["reporte"], res["split"]
 
     imp = _importancias(res["modelos"], features)
@@ -71,6 +72,9 @@ def correr_modelo(nombre: str, info, features: list[str], gold, guardar: bool) -
             "train_seasons": CFG.seasons_for_training(),
             "valid_season": CFG.valid_season, "holdout_season": CFG.holdout_season,
             "n_train": rep["n_train"], "n_test": rep["n"],
+            "incluye_holdout": rep["incluye_holdout"],
+            "metricas_son_de_generalizacion": rep["metricas_son_de_generalizacion"],
+            "seasons_entrenadas": CFG.seasons_a_entrenar(incluir_holdout),
         }
         prior = CFG.gold_root / "prior_ascendidos.json"
         if prior.exists():
@@ -133,6 +137,9 @@ def main() -> None:
     ap.add_argument("--top-n", type=int, default=None, help="tamaño del set podado")
     ap.add_argument("--walk-forward", action="store_true")
     ap.add_argument("--no-guardar", action="store_true")
+    ap.add_argument("--sin-holdout", action="store_true",
+                    help="entrena SIN el holdout: es el modelo de evaluacion, el que se "
+                         "reporta. Por defecto se entrena el de produccion, que lo incluye")
     args = ap.parse_args()
 
     setup(CFG.log_level, CFG.log_format)
@@ -145,8 +152,14 @@ def main() -> None:
     if args.features == "podado":
         features = _podado(args.model, args.top_n or CFG.podado_top_n)
 
+    incluir = CFG.incluir_holdout and not args.sin_holdout
+    if incluir:
+        log.warning("Modelo de PRODUCCION: entrena CON el holdout %s. Las metricas que "
+                    "imprime NO son de generalizacion. Para el numero que se reporta, "
+                    "usar --sin-holdout.", CFG.holdout_season)
+
     nombres = list(models.MODELOS) if args.todos else [args.model]
-    resultados = [correr_modelo(n, info, features, gold, not args.no_guardar)
+    resultados = [correr_modelo(n, info, features, gold, not args.no_guardar, incluir)
                   for n in nombres]
 
     if args.todos:
