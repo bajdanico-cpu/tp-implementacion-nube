@@ -1,0 +1,349 @@
+<title>Premier ML antes del deploy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+
+<style>
+:root{
+  --paper:#f2f5f6; --card:#ffffff; --ink:#16191d; --ink-2:#3d454e; --muted:#6d7780;
+  --rule:#d8dfe3; --rule-2:#e9eef0;
+  --local:#1e6091; --empate:#8a8578; --visita:#a4243b;
+  --accent:#1e6091; --accent-wash:#e6eef4;
+  --good:#1a6b45; --bad:#a4243b; --warn:#8a6410;
+  --shadow:0 1px 2px rgba(22,25,29,.05), 0 8px 24px -12px rgba(22,25,29,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#12151a; --card:#191d24; --ink:#e8edf1; --ink-2:#b3bec8; --muted:#828e99;
+    --rule:#2b323b; --rule-2:#232931;
+    --local:#6fa8d6; --empate:#a8a294; --visita:#e0798c;
+    --accent:#6fa8d6; --accent-wash:#1b2733;
+    --good:#63c295; --bad:#e0798c; --warn:#d4a843;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12151a; --card:#191d24; --ink:#e8edf1; --ink-2:#b3bec8; --muted:#828e99;
+  --rule:#2b323b; --rule-2:#232931;
+  --local:#6fa8d6; --empate:#a8a294; --visita:#e0798c;
+  --accent:#6fa8d6; --accent-wash:#1b2733;
+  --good:#63c295; --bad:#e0798c; --warn:#d4a843;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif;
+  font-size:16.5px; line-height:1.62; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:920px; margin:0 auto; padding:clamp(28px,5vw,64px) clamp(18px,4vw,32px) 96px}
+h1,h2,h3{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif; text-wrap:balance; margin:0}
+h1{font-size:clamp(2.1rem,5.2vw,3rem); font-weight:700; letter-spacing:-.015em; line-height:1.08}
+h2{font-size:clamp(1.35rem,3vw,1.7rem); font-weight:700; letter-spacing:-.01em}
+h3{font-size:1.03rem; font-weight:600; letter-spacing:.005em}
+p{margin:0; max-width:66ch}
+strong{font-weight:600}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.87em}
+code{background:var(--rule-2); padding:.13em .38em; border-radius:3px}
+
+.stack{display:flex; flex-direction:column; gap:18px}
+.stack-s{display:flex; flex-direction:column; gap:10px}
+
+header.top{display:flex; flex-direction:column; gap:14px; padding-bottom:26px; border-bottom:2px solid var(--ink); margin-bottom:38px}
+.eyebrow{font-family:"IBM Plex Mono",monospace; font-size:.7rem; font-weight:500;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--muted)}
+.lede{font-size:1.08rem; color:var(--ink-2); max-width:62ch}
+
+section{margin-top:52px; display:flex; flex-direction:column; gap:18px}
+section > h2{display:flex; align-items:baseline; gap:12px}
+section > h2::before{content:""; width:22px; height:3px; background:var(--accent); flex:none; transform:translateY(-.28em)}
+
+.card{background:var(--card); border:1px solid var(--rule); border-radius:8px;
+  padding:clamp(16px,2.6vw,24px); box-shadow:var(--shadow)}
+
+/* readout tiles */
+.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr)); gap:12px}
+.tile{background:var(--card); border:1px solid var(--rule); border-radius:8px; padding:14px 16px;
+  display:flex; flex-direction:column; gap:3px}
+.tile .k{font-family:"IBM Plex Mono",monospace; font-size:.66rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted)}
+.tile .v{font-family:"IBM Plex Mono",monospace; font-size:1.42rem; font-weight:600;
+  font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+.tile .n{font-size:.79rem; color:var(--muted); line-height:1.4}
+
+.scroll{overflow-x:auto; -webkit-overflow-scrolling:touch}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:min(560px,100%)}
+th,td{padding:8px 12px; text-align:left; border-bottom:1px solid var(--rule-2); vertical-align:baseline}
+th{font-family:"IBM Plex Mono",monospace; font-size:.68rem; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); font-weight:500; border-bottom:1px solid var(--rule)}
+td.num,th.num{text-align:right; font-family:"IBM Plex Mono",monospace;
+  font-variant-numeric:tabular-nums}
+tbody tr:last-child td{border-bottom:none}
+tr.hi td{background:var(--accent-wash)}
+.good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+
+pre{margin:0; background:var(--card); border:1px solid var(--rule); border-radius:8px;
+  padding:15px 17px; overflow-x:auto; font-family:"IBM Plex Mono",monospace;
+  font-size:.83rem; line-height:1.66; color:var(--ink-2)}
+pre b{color:var(--ink); font-weight:600}
+pre .c{color:var(--muted)}
+
+.note{border-left:3px solid var(--accent); padding:2px 0 2px 16px; color:var(--ink-2)}
+.note.alert{border-left-color:var(--bad)}
+.note strong{color:var(--ink)}
+
+/* prediction bars */
+.fx{display:grid; grid-template-columns:auto 1fr auto; gap:10px 14px; align-items:center;
+  font-size:.87rem}
+.fx .m{font-family:"IBM Plex Mono",monospace; font-weight:500; white-space:nowrap}
+.fx .bar{display:flex; height:19px; border-radius:3px; overflow:hidden; min-width:120px}
+.fx .bar i{display:block; font-style:normal}
+.fx .bar .h{background:var(--local)} .fx .bar .d{background:var(--empate)} .fx .bar .a{background:var(--visita)}
+.fx .p{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums;
+  font-size:.79rem; color:var(--muted); white-space:nowrap}
+.legend{display:flex; gap:16px; flex-wrap:wrap; font-size:.76rem; color:var(--muted);
+  font-family:"IBM Plex Mono",monospace}
+.legend span{display:flex; align-items:center; gap:6px}
+.legend b{width:10px; height:10px; border-radius:2px; display:block}
+
+ol.steps{margin:0; padding:0; list-style:none; counter-reset:s; display:flex;
+  flex-direction:column; gap:16px}
+ol.steps li{counter-increment:s; display:grid; grid-template-columns:26px 1fr; gap:14px}
+ol.steps li::before{content:counter(s); font-family:"IBM Plex Mono",monospace; font-weight:600;
+  font-size:.78rem; color:var(--accent); border:1px solid var(--rule); border-radius:50%;
+  width:26px; height:26px; display:grid; place-items:center}
+ul.plain{margin:0; padding-left:19px; display:flex; flex-direction:column; gap:8px}
+ul.plain li{padding-left:2px}
+
+footer{margin-top:64px; padding-top:20px; border-top:1px solid var(--rule);
+  font-size:.8rem; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 18px}
+a{color:var(--accent); text-underline-offset:3px}
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <span class="eyebrow">TP CD.18 · ITBA · estado al 25 ago 2026</span>
+  <h1>Premier ML antes del deploy</h1>
+  <p class="lede">Dónde quedó el pipeline, qué modelo va a producción y qué hay que tener en
+  cuenta para reproducirlo en la nube sin que dé distinto.</p>
+</header>
+
+<section>
+  <h2>El modelo que va a producción</h2>
+  <div class="tiles">
+    <div class="tile"><span class="k">modelo</span><span class="v">xgb_gbt</span><span class="n">XGBoost, 159 rondas</span></div>
+    <div class="tile"><span class="k">features</span><span class="v">192</span><span class="n">feature set v2</span></div>
+    <div class="tile"><span class="k">filas de train</span><span class="v">1.384</span><span class="n">2022-23 → 2025-26</span></div>
+    <div class="tile"><span class="k">semillas</span><span class="v">5</span><span class="n">probabilidades promediadas</span></div>
+  </div>
+  <p><code>models/xgb_gbt/20260825T011618Z/</code> — cinco <code>.ubj</code>, uno por semilla,
+  más <code>metadata.json</code> con el orden exacto de las 192 columnas.</p>
+</section>
+
+<section>
+  <h2>Métricas</h2>
+  <p>Las que valen como evidencia salen del <strong>modelo de evaluación</strong>: entrena
+  hasta 2024-25 y se mide contra 2025-26, que nunca vio. El de producción entrena también
+  con 2025-26, así que sus números sobre esa temporada ya no prueban nada.</p>
+
+  <div class="card scroll">
+    <table>
+      <thead><tr>
+        <th>Sobre el holdout 2025-26 (380 partidos)</th>
+        <th class="num">Accuracy</th><th class="num">IC 95 %</th>
+        <th class="num">F1 macro</th><th class="num">Log-loss</th>
+      </tr></thead>
+      <tbody>
+        <tr class="hi"><td><strong>Nuestro modelo</strong></td>
+          <td class="num">0,497</td><td class="num">0,447 – 0,545</td>
+          <td class="num">0,400</td><td class="num">1,033</td></tr>
+        <tr><td>Cuotas de cierre <span style="color:var(--muted)">(el mercado)</span></td>
+          <td class="num">0,495</td><td class="num">—</td><td class="num">—</td>
+          <td class="num good">1,012</td></tr>
+        <tr><td>Prior de clase <span style="color:var(--muted)">(la vara del canvas)</span></td>
+          <td class="num">0,426</td><td class="num">—</td><td class="num">—</td>
+          <td class="num">1,085</td></tr>
+        <tr><td>Siempre al local</td>
+          <td class="num">0,426</td><td class="num">—</td><td class="num">—</td>
+          <td class="num">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <p><strong>Le ganamos al baseline del canvas y empatamos la accuracy del mercado sin usar
+    cuotas.</strong> En log-loss el mercado sigue adelante: está mejor calibrado. Con 380
+    partidos el intervalo es de ±5 puntos, así que 0,497 y 0,495 son indistinguibles.</p>
+  </div>
+
+  <div class="note alert">
+    <p><strong>Lo que no logramos.</strong> Cuando el modelo discrepa del mercado acierta
+    0,346 contra 0,365 de las casas: no tiene ventaja informativa. Ninguna estrategia de
+    apuestas dio ROI positivo demostrable — el overround medido es 5,7 %.</p>
+  </div>
+</section>
+
+<section>
+  <h2>La metodología, en tres pasos</h2>
+  <ol class="steps">
+    <li><div class="stack-s"><h3>Validar</h3>
+      <p>Entrenar hasta 2024-25, medir en 2025-26. <strong>Es el número que se reporta.</strong>
+      <code>python -m training.run --sin-holdout</code></p></div></li>
+    <li><div class="stack-s"><h3>Reentrenar</h3>
+      <p>Si mejora, reentrenar incluyendo 2025-26 — 380 partidos más, y los más recientes.
+      <strong>Es el que sirve.</strong> <code>python -m training.run</code></p></div></li>
+    <li><div class="stack-s"><h3>Medir en vivo</h3>
+      <p>2026-27 fecha a fecha, contra los baselines calculados sobre las mismas filas.
+      <code>python -m monitoring.temporada_actual</code></p></div></li>
+  </ol>
+  <p>La temporada en curso <strong>nunca</strong> entra al entrenamiento, ni siquiera en el
+  paso 2: sus partidos jugados sirven de historia para las fechas siguientes, pero usarlos
+  como objetivo dejaría al proyecto sin ninguna evaluación limpia. Hay tests que lo verifican.</p>
+</section>
+
+<section>
+  <h2>Para el deploy: no reentrenar en la nube</h2>
+  <div class="note alert">
+    <p><strong>GPU y CPU no dan el mismo modelo.</strong> Medido sobre las mismas 1.384 filas,
+    misma semilla, mismas 159 rondas: la diferencia máxima en probabilidad es <b>0,079</b> y
+    <b>18 de 380 predicciones cambian de resultado</b>. El algoritmo <code>hist</code> de GPU
+    no es bit-idéntico al de CPU — distinto orden de reducción en punto flotante.</p>
+  </div>
+  <div class="card scroll">
+    <table>
+      <thead><tr><th>Reproducibilidad</th><th>¿Bit a bit?</th><th class="num">Dif. máxima</th></tr></thead>
+      <tbody>
+        <tr><td>Mismo device, misma semilla</td><td class="good">Sí</td><td class="num">0</td></tr>
+        <tr><td>GPU vs CPU</td><td class="bad">No</td><td class="num">7,9 × 10⁻²</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>La consecuencia práctica es simple: subir el <code>.ubj</code> entrenado en
+  local, no reentrenar en el nodo.</strong> El formato nativo de XGBoost es portable
+  CPU↔GPU para <em>inferencia</em> y sobrevive upgrades de librería. Un modelo entrenado en
+  GPU carga y predice en CPU sin tocar nada — hay un test que lo demuestra.</p>
+  <p>Si igual quieren reentrenar en la nube: es reproducible siempre que el nodo use el mismo
+  device, las versiones pineadas de <code>requirements.txt</code> y el mismo
+  <code>gold_tp_match.parquet</code> (su hash está en el <code>metadata.json</code>).</p>
+</section>
+
+<section>
+  <h2>Fecha 2 · predicción registrada</h2>
+  <p>Usa la fecha 1 como historia: el último partido considerado es del 24/08 y el corte de la
+  fecha 2 es el 28/08.</p>
+  <div class="card stack-s">
+    <div class="legend">
+      <span><b style="background:var(--local)"></b> local</span>
+      <span><b style="background:var(--empate)"></b> empate</span>
+      <span><b style="background:var(--visita)"></b> visitante</span>
+    </div>
+    <div class="fx">
+      <span class="m">CRY–MCI</span><span class="bar"><i class="h" style="width:18.2%"></i><i class="d" style="width:20.6%"></i><i class="a" style="width:61.2%"></i></span><span class="p">.18 / .21 / .61</span>
+      <span class="m">LIV–NFO</span><span class="bar"><i class="h" style="width:70.1%"></i><i class="d" style="width:14.0%"></i><i class="a" style="width:15.9%"></i></span><span class="p">.70 / .14 / .16</span>
+      <span class="m">BOU–EVE</span><span class="bar"><i class="h" style="width:37.5%"></i><i class="d" style="width:28.0%"></i><i class="a" style="width:34.5%"></i></span><span class="p">.38 / .28 / .35</span>
+      <span class="m">COV–HUL</span><span class="bar"><i class="h" style="width:25.3%"></i><i class="d" style="width:23.5%"></i><i class="a" style="width:51.2%"></i></span><span class="p">.25 / .24 / .51</span>
+      <span class="m">TOT–NEW</span><span class="bar"><i class="h" style="width:46.8%"></i><i class="d" style="width:21.3%"></i><i class="a" style="width:31.9%"></i></span><span class="p">.47 / .21 / .32</span>
+      <span class="m">CHE–BHA</span><span class="bar"><i class="h" style="width:46.8%"></i><i class="d" style="width:23.9%"></i><i class="a" style="width:29.3%"></i></span><span class="p">.47 / .24 / .29</span>
+      <span class="m">LEE–BRE</span><span class="bar"><i class="h" style="width:37.3%"></i><i class="d" style="width:30.2%"></i><i class="a" style="width:32.5%"></i></span><span class="p">.37 / .30 / .33</span>
+      <span class="m">SUN–FUL</span><span class="bar"><i class="h" style="width:42.5%"></i><i class="d" style="width:27.4%"></i><i class="a" style="width:30.1%"></i></span><span class="p">.43 / .27 / .30</span>
+      <span class="m">MUN–IPS</span><span class="bar"><i class="h" style="width:61.2%"></i><i class="d" style="width:20.0%"></i><i class="a" style="width:18.8%"></i></span><span class="p">.61 / .20 / .19</span>
+      <span class="m">AVL–ARS</span><span class="bar"><i class="h" style="width:22.4%"></i><i class="d" style="width:28.6%"></i><i class="a" style="width:48.9%"></i></span><span class="p">.22 / .29 / .49</span>
+    </div>
+  </div>
+  <p><strong>Fecha 1: 5 aciertos de 10.</strong> «Siempre al local» habría acertado 7 — pero
+  fue una fecha con 7 locales de 10 contra el 44,5 % histórico, y con n=10 el intervalo es
+  [0,20 – 0,80]. Los dos errores más caros fueron los ascendidos ganando de local
+  (HUL–MUN, IPS–SUN): el cold-start en vivo.</p>
+</section>
+
+<section>
+  <h2>Fuentes pendientes</h2>
+  <p>Las tres se evaluaron con el mismo filtro antes de construir nada: <em>¿está el dato
+  antes del partido, y hay histórico para entrenar?</em></p>
+  <div class="card scroll">
+    <table>
+      <thead><tr><th>Fuente</th><th>Aporta</th><th>Histórico</th><th>2026-27</th><th>Veredicto</th></tr></thead>
+      <tbody>
+        <tr class="hi"><td><strong>TheSportsDB</strong></td><td>Copas y Europa, por equipo</td>
+          <td class="good">Sí</td><td class="good">Sí</td>
+          <td>Lo mejor que hay. Bloquea la <strong>cuota gratuita</strong>: 5 partidos por consulta</td></tr>
+        <tr><td>openfootball</td><td>FA Cup, EFL, Champions</td>
+          <td class="good">Sí</td><td class="bad">No</td><td>Sin la temporada actual, no sirve</td></tr>
+        <tr><td>Understat</td><td>npxG, tiros por jugador</td>
+          <td class="bad">Sólo totales</td><td class="good">Sí, a 1 día</td>
+          <td>Sin grano por partido. Snapshotear sirve <strong>de acá en adelante</strong></td></tr>
+        <tr><td>Google</td><td>Todo, con histórico</td>
+          <td class="good">Sí</td><td class="good">Sí</td>
+          <td class="bad">Detecta el pedido automatizado y bloquea</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <p><strong>Google es el caso de «visible pero no obtenible».</strong> Muestra todos los
+    partidos de todas las competencias con histórico completo, pero devuelve marcadores de
+    tráfico inusual ante un pedido programático, y no expone API de deportes: esos datos no
+    son suyos, los licencia de Opta. La ruta legítima y barata es el tier pago de
+    TheSportsDB, que ya tiene la cobertura verificada.</p>
+  </div>
+  <p>Entre las descartadas: fbref y football-data.org devuelven 403; el árbitro está en
+  <code>E0.csv</code> con 100 % de cobertura pero se publica <em>después</em> del partido;
+  y las fechas en blanco como proxy de compromiso de copa son sólo 10 por temporada,
+  demasiado esparso.</p>
+  <div class="note">
+    <p><strong>Por qué importa la fatiga.</strong> Agregamos ventanas de 7, 14 y 21 días y no
+    aportaron nada — <em>justamente porque sólo ven partidos de Premier</em>. Un equipo que
+    sigue en semis de Champions y en la Copa de la Liga juega mucho más de lo que esas
+    columnas registran. El resultado nulo es evidencia a favor de la hipótesis, no en contra.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Qué corre y en qué orden</h2>
+<pre><span class="c"># entorno y datos — no hace falta ninguna credencial</span>
+.\scripts\setup_env.ps1
+python -m ingestion.run          <span class="c"># ~27 MB de Bronze</span>
+python -m transform.silver       <span class="c"># 4 tablas Silver</span>
+python -m features.gold_tp       <span class="c"># Gold: 1.530 × 214</span>
+
+<span class="c"># entrenamiento</span>
+python -m training.run --sin-holdout   <span class="c"># el que se REPORTA</span>
+<b>python -m training.run</b>                 <span class="c"># el que SIRVE (incluye 2025-26)</span>
+
+<span class="c"># operación</span>
+python -m serving.predict --gw 2
+python -m monitoring.temporada_actual
+
+<span class="c"># verificación</span>
+pytest                           <span class="c"># 381 tests</span>
+python -m training.device        <span class="c"># ¿hay GPU o cae a CPU?</span></pre>
+  <p>El recorrido completo, con los números explicados paso a paso, está en
+  <code>notebooks/00_recorrido_completo.ipynb</code>.</p>
+</section>
+
+<section>
+  <h2>Lo que falta para cerrar la nube</h2>
+  <ul class="plain">
+    <li><strong><code>serving/</code></strong> — <code>app.py</code> con FastAPI y
+      <code>Dockerfile</code>. La lógica del endpoint ya está escrita y probada en
+      <code>serving/predict.py</code>: carga el <code>.ubj</code>, valida el orden de las
+      columnas contra el metadata y registra cada predicción.</li>
+    <li><strong><code>infra/</code></strong> — Cloud Run + Cloud Scheduler (dos disparos por
+      semana), Artifact Registry y el bucket de GCS.</li>
+    <li><strong><code>common/storage.py</code></strong> — el backend GCS está declarado como
+      stub: son seis métodos y una línea de <code>config.yaml</code>. La lógica de negocio
+      no se toca.</li>
+    <li><strong>El Job de entrenamiento va sin GPU.</strong> Está medido: a 1.140 filas la
+      GPU pierde 1,7×, y recién a partir de ~50.000 filas se paga el 2,5–3× que cuesta
+      una T4.</li>
+  </ul>
+</section>
+
+<footer>
+  <span>github.com/bajdanico-cpu/tp-implementacion-nube</span>
+  <span>381 tests · 192 features · 1.384 filas de train</span>
+  <span>modelo 20260825T011618Z</span>
+</footer>
+
+</div>
