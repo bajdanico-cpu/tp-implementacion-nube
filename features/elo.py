@@ -99,6 +99,34 @@ def calcular(largo: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(filas)
 
 
+def deltas_elo(e: pd.DataFrame) -> pd.DataFrame:
+    """Cuanto GANO o PERDIO de rating el equipo en sus ultimos N partidos.
+
+    Es informacion distinta del nivel y distinta de `racha`:
+
+    - `elo` dice **donde esta** el equipo.
+    - `racha` compara los puntos de los ultimos 3 contra su propio promedio, pero trata
+      igual todos los rivales: ganarle al ultimo pesa lo mismo que ganarle al primero.
+    - `elo_delta_uN` dice **hacia donde va, ponderado por contra quien**. Un equipo que
+      suma 6 puntos contra dos rivales de arriba gana mucho mas rating que otro que suma
+      los mismos 6 contra dos de abajo.
+
+    La combinacion `elo` + `elo_delta` le permite al modelo distinguir cuatro situaciones
+    que hoy se le mezclan: grande en alza, grande en caida, chico en alza y chico en caida.
+    Un equipo de Elo bajo que viene subiendo fuerte es justamente el caso que las medias
+    moviles no capturan.
+    """
+    d = e.sort_values(["team_short", "kickoff_time"]).copy()
+    g = d.groupby("team_short", sort=False)["elo"]
+    for n in (3, 5, 10):
+        # El Elo de ahora menos el de hace n partidos. `shift` cuenta partidos del equipo,
+        # que es lo correcto: no hay riesgo de leakage porque el merge_asof posterior se
+        # encarga de que un partido no vea el suyo propio.
+        d[f"elo_delta_u{n}"] = d["elo"] - g.shift(n)
+    cols = [f"elo_delta_u{n}" for n in (3, 5, 10)]
+    return d[["season", "fixture_id", "team_short"] + cols]
+
+
 def ventanas_sorpresa(e: pd.DataFrame) -> pd.DataFrame:
     """Media movil de la sorpresa: que tan impredecible viene siendo el equipo.
 
@@ -150,7 +178,8 @@ def extras(largo: pd.DataFrame) -> pd.DataFrame:
     return d[["season", "fixture_id", "team_short", "kickoff_time"] + cols]
 
 
-COLUMNAS = ["elo", "tiros_conc_u5", "tiros_arco_conc_u5", "xg_diff_u5", "xgc_diff_u5",
+COLUMNAS = ["elo", "elo_delta_u3", "elo_delta_u5", "elo_delta_u10",
+            "tiros_conc_u5", "tiros_arco_conc_u5", "xg_diff_u5", "xgc_diff_u5",
             "partidos_14d", "racha", "sorpresa_u5", "sorpresa_u10"]
 
 
@@ -158,8 +187,10 @@ def construir(largo: pd.DataFrame) -> pd.DataFrame:
     """Todas las features de este módulo, listas para el `merge_asof`."""
     e = calcular(largo)
     s = ventanas_sorpresa(e)
+    dl = deltas_elo(e)
     x = extras(largo)
     out = (e.drop(columns=["sorpresa", "elo_esperado"])
+            .merge(dl, on=["season", "fixture_id", "team_short"], validate="one_to_one")
             .merge(s, on=["season", "fixture_id", "team_short"], validate="one_to_one")
             .merge(x, on=["season", "fixture_id", "team_short", "kickoff_time"],
                    how="outer", validate="one_to_one"))

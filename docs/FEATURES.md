@@ -63,8 +63,8 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 ## Resumen
 
 - **Versión del feature set:** `v2`
-- **Features:** 164
-- **Columnas totales:** 186 (164 features + 22 no-features)
+- **Features:** 171
+- **Columnas totales:** 193 (171 features + 22 no-features)
 - **Grano:** un partido = una fila. 1.520 filas (4 temporadas × 380).
 
 | Grupo | Columnas |
@@ -75,11 +75,11 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 | Puntaje de campeonato | 14 |
 | Head-to-head | 10 |
 | Continuidad de plantel | 2 |
-| Elo y estado | 18 |
+| Elo y estado | 24 |
 | Contexto | 10 |
 | Dificultad | 3 |
-| Diferenciales | 15 |
-| **TOTAL DE FEATURES** | **164** |
+| Diferenciales | 16 |
+| **TOTAL DE FEATURES** | **171** |
 
 ## Las 16 estadísticas base
 
@@ -258,11 +258,14 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `local_continuidad_plantel_u5` | local | u5 | `fact_player_gw` | proporción de los minutos de los últimos 5 partidos que jugaron futbolistas que también jugaron el partido MÁS RECIENTE del equipo. 100% leak-free: sólo mira partidos pasados. Se desploma cuando el plantel se renovó, que es justo cuando la forma pasada deja de representar al equipo actual. Medido: entre temporadas rota ~40% de los minutos |
 | `visita_continuidad_plantel_u5` | visita | u5 | `fact_player_gw` | proporción de los minutos de los últimos 5 partidos que jugaron futbolistas que también jugaron el partido MÁS RECIENTE del equipo. 100% leak-free: sólo mira partidos pasados. Se desploma cuando el plantel se renovó, que es justo cuando la forma pasada deja de representar al equipo actual. Medido: entre temporadas rota ~40% de los minutos |
 
-### Elo y estado — 18 columnas
+### Elo y estado — 24 columnas
 
 | Columna | Lado | Ventana | Fuente | Cálculo |
 |---|---|---|---|---|
 | `local_elo` | local | — | `derivada` | rating Elo del equipo despues de su ultimo partido antes del corte. K=20, ventaja de localia 65 puntos, margen de victoria atenuado por logaritmo, y regresion del 25% a la media al cambiar de temporada. Resuelve lo que las medias moviles no pueden: ponderar cada resultado segun contra quien fue. Validado -- al cierre de 2024-25 da Liverpool/Arsenal/City arriba y Southampton/Ipswich/Leicester abajo, que son los tres descendidos |
+| `local_elo_delta_u3` | local | — | `derivada` | cuanto GANO o PERDIO de rating Elo en sus ultimos 3 partidos. Es informacion distinta del nivel y distinta de `racha`: `elo` dice donde esta el equipo, `racha` compara puntos contra su propio promedio tratando igual a todos los rivales, y esto dice hacia donde va PONDERADO POR CONTRA QUIEN. Sumar 6 puntos contra dos rivales de arriba sube mucho mas que sumarlos contra dos de abajo |
+| `local_elo_delta_u5` | local | — | `derivada` | lo mismo sobre 5 partidos |
+| `local_elo_delta_u10` | local | — | `derivada` | lo mismo sobre 10: menos ruidoso. Junto con `elo` le permite al modelo distinguir cuatro situaciones que hoy se le mezclan: grande en alza, grande en caida, chico en alza y chico en caida |
 | `local_tiros_conc_u5` | local | — | `derivada` | tiros que le concedieron al equipo en sus ultimos 5 partidos. Las ventanas de `tiros` miden lo que el equipo genera; esta mide lo que regala, que es informacion distinta |
 | `local_tiros_arco_conc_u5` | local | — | `derivada` | tiros al arco concedidos en los ultimos 5 |
 | `local_xg_diff_u5` | local | — | `derivada` | goles menos xG en los ultimos 5: suerte de definicion. Es fuertemente reversible a la media, asi que un valor alto anticipa una caida. Ni `gf_u5` ni `xg_u5` capturan esto por separado |
@@ -272,6 +275,9 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `local_sorpresa_u5` | local | — | `derivada` | cuanto se apartaron los ultimos 5 resultados de lo que el Elo esperaba: \|real - esperado\| promediado. Mide que tan IMPREDECIBLE viene siendo el equipo, no en que direccion. Es informacion sobre la confiabilidad de la prediccion. No usa las predicciones del modelo -- eso seria un bucle de realimentacion -- sino la expectativa del Elo, que sale solo de resultados pasados |
 | `local_sorpresa_u10` | local | — | `derivada` | lo mismo sobre 10 partidos: menos ruidoso, mas estructural. Medido en 2025-26, los mas impredecibles fueron CHE, NEW y AVL; los mas predecibles BUR y BRE (ser consistentemente malo tambien es predecible) |
 | `visita_elo` | visita | — | `derivada` | rating Elo del equipo despues de su ultimo partido antes del corte. K=20, ventaja de localia 65 puntos, margen de victoria atenuado por logaritmo, y regresion del 25% a la media al cambiar de temporada. Resuelve lo que las medias moviles no pueden: ponderar cada resultado segun contra quien fue. Validado -- al cierre de 2024-25 da Liverpool/Arsenal/City arriba y Southampton/Ipswich/Leicester abajo, que son los tres descendidos |
+| `visita_elo_delta_u3` | visita | — | `derivada` | cuanto GANO o PERDIO de rating Elo en sus ultimos 3 partidos. Es informacion distinta del nivel y distinta de `racha`: `elo` dice donde esta el equipo, `racha` compara puntos contra su propio promedio tratando igual a todos los rivales, y esto dice hacia donde va PONDERADO POR CONTRA QUIEN. Sumar 6 puntos contra dos rivales de arriba sube mucho mas que sumarlos contra dos de abajo |
+| `visita_elo_delta_u5` | visita | — | `derivada` | lo mismo sobre 5 partidos |
+| `visita_elo_delta_u10` | visita | — | `derivada` | lo mismo sobre 10: menos ruidoso. Junto con `elo` le permite al modelo distinguir cuatro situaciones que hoy se le mezclan: grande en alza, grande en caida, chico en alza y chico en caida |
 | `visita_tiros_conc_u5` | visita | — | `derivada` | tiros que le concedieron al equipo en sus ultimos 5 partidos. Las ventanas de `tiros` miden lo que el equipo genera; esta mide lo que regala, que es informacion distinta |
 | `visita_tiros_arco_conc_u5` | visita | — | `derivada` | tiros al arco concedidos en los ultimos 5 |
 | `visita_xg_diff_u5` | visita | — | `derivada` | goles menos xG en los ultimos 5: suerte de definicion. Es fuertemente reversible a la media, asi que un valor alto anticipa una caida. Ni `gf_u5` ni `xg_u5` capturan esto por separado |
@@ -304,7 +310,7 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `fdr_visita` | visita | — | `fact_fixture` | FDR de FPL para el visitante (team_a_difficulty), escala 1-5 |
 | `fdr_dif` | — | — | `derivada` | fdr_local - fdr_visita |
 
-### Diferenciales — 15 columnas
+### Diferenciales — 16 columnas
 
 | Columna | Lado | Ventana | Fuente | Cálculo |
 |---|---|---|---|---|
@@ -321,6 +327,7 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `dif_dias_descanso` | — | — | `derivada` | local_dias_descanso - visita_dias_descanso |
 | `dif_n_hist` | — | — | `derivada` | local_n_hist - visita_n_hist |
 | `dif_elo` | — | — | `derivada` | local_elo - visita_elo |
+| `dif_elo_delta_u5` | — | — | `derivada` | local_elo_delta_u5 - visita_elo_delta_u5 |
 | `dif_racha` | — | — | `derivada` | local_racha - visita_racha |
 | `dif_sorpresa_u10` | — | — | `derivada` | local_sorpresa_u10 - visita_sorpresa_u10 |
 

@@ -279,6 +279,16 @@ ESTADO_POR_LADO = (
             "medias moviles no pueden: ponderar cada resultado segun contra quien fue. "
             "Validado -- al cierre de 2024-25 da Liverpool/Arsenal/City arriba y "
             "Southampton/Ipswich/Leicester abajo, que son los tres descendidos"),
+    ("elo_delta_u3", "cuanto GANO o PERDIO de rating Elo en sus ultimos 3 partidos. Es "
+                     "informacion distinta del nivel y distinta de `racha`: `elo` dice "
+                     "donde esta el equipo, `racha` compara puntos contra su propio "
+                     "promedio tratando igual a todos los rivales, y esto dice hacia "
+                     "donde va PONDERADO POR CONTRA QUIEN. Sumar 6 puntos contra dos "
+                     "rivales de arriba sube mucho mas que sumarlos contra dos de abajo"),
+    ("elo_delta_u5", "lo mismo sobre 5 partidos"),
+    ("elo_delta_u10", "lo mismo sobre 10: menos ruidoso. Junto con `elo` le permite al "
+                      "modelo distinguir cuatro situaciones que hoy se le mezclan: grande "
+                      "en alza, grande en caida, chico en alza y chico en caida"),
     ("tiros_conc_u5", "tiros que le concedieron al equipo en sus ultimos 5 partidos. Las "
                       "ventanas de `tiros` miden lo que el equipo genera; esta mide lo "
                       "que regala, que es informacion distinta"),
@@ -324,7 +334,7 @@ def _dificultad() -> list[Feature]:
 DIFERENCIALES = (
     "pts_u5", "gf_u5", "gc_u5", "xg_u5", "xgc_u5", "pts_def_u5", "pts_med_u5",
     "pts_camp", "pos_tabla_camp", "ppp_camp", "dias_descanso", "n_hist",
-    "elo", "racha", "sorpresa_u10",
+    "elo", "elo_delta_u5", "racha", "sorpresa_u10",
 )
 
 
