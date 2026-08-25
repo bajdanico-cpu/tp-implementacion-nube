@@ -22,7 +22,7 @@ from common.logging_setup import get_logger, setup
 from common.storage import read_table, write_table
 from eda.baselines import odds_a_probabilidades
 from features import (cold_start, competencias as fcomp, elo, h2h,
-                      player_agg, spec, team_form as tf)
+                      opta as fopta, player_agg, spec, team_form as tf)
 from transform import leakage
 
 log = get_logger(__name__)
@@ -174,6 +174,14 @@ def construir(objetivos: pd.DataFrame | None = None,
                             feats_comp], axis=1)
     feats = feats.merge(feats_comp, on=CLAVE + ["lado"], validate="one_to_one")
     cols_lado.extend(fcomp.COLUMNAS)
+
+    # --- estadisticas de Opta ---
+    # Estas si van por merge_asof: son ventanas por PARTIDO, igual que las de forma.
+    h_opta = fopta.construir()
+    if h_opta is not None:
+        bloque = _pegar_bloque(obj_lado, h_opta, ["team_short"], list(fopta.COLUMNAS))
+        feats = feats.merge(bloque, on=CLAVE + ["lado"], validate="one_to_one")
+        cols_lado.extend(fopta.COLUMNAS)
 
     ancho = _a_ancho(feats, cols_lado)
     # Las columnas de auditoría se leen mejor con el lado al final.

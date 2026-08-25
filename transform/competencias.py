@@ -123,6 +123,9 @@ def build() -> pd.DataFrame:
     if d.empty:
         raise RuntimeError("No hay fixtures de pulselive en Bronze. "
                            "Corré: python -m ingestion.bronze_pulselive")
+    # La API da milisegundos y el resto del pipeline trabaja en microsegundos. Sin
+    # unificar, cualquier merge contra fact_fixture o la tabla larga falla por dtype.
+    d["kickoff_time"] = d["kickoff_time"].astype("datetime64[us, UTC]")
     d = d.sort_values(["team_short", "kickoff_time"]).reset_index(drop=True)
 
     log.info("fact_match_comp: %d filas equipo-partido", len(d))

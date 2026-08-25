@@ -62,9 +62,9 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 
 ## Resumen
 
-- **Versión del feature set:** `v2.906eed82.220`
-- **Features:** 220
-- **Columnas totales:** 242 (220 features + 22 no-features)
+- **Versión del feature set:** `v2.3189c9d4.279`
+- **Features:** 279
+- **Columnas totales:** 301 (279 features + 22 no-features)
 - **Grano:** un partido = una fila. 1.520 filas (4 temporadas × 380).
 
 | Grupo | Columnas |
@@ -77,10 +77,11 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 | Continuidad de plantel | 2 |
 | Elo y estado | 36 |
 | Otras competencias | 24 |
+| Opta | 56 |
 | Contexto | 10 |
 | Dificultad | 3 |
-| Diferenciales | 21 |
-| **TOTAL DE FEATURES** | **220** |
+| Diferenciales | 24 |
+| **TOTAL DE FEATURES** | **279** |
 
 ## Las 16 estadísticas base
 
@@ -339,6 +340,67 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `visita_gf_todo_u5` | visita | — | `fact_match_comp` | goles a favor en los ultimos 5 de cualquier competencia |
 | `visita_gc_todo_u5` | visita | — | `fact_match_comp` | goles en contra en los ultimos 5 de cualquier competencia |
 
+### Opta — 56 columnas
+
+| Columna | Lado | Ventana | Fuente | Cálculo |
+|---|---|---|---|---|
+| `local_tiros_area_u3` | local | u3 | `fact_opta_stats` | remates desde DENTRO del area. Separado de los de afuera es el proxy de calidad del xG que se creia inalcanzable sin Understat: un remate dentro del area vale unas cuatro veces uno lejano, y el xG agregado de FPL no distingue '2,0 en tres ocasiones claras' de '2,0 en veinte remates de lejos'. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_tiros_fuera_u3` | local | u3 | `fact_opta_stats` | remates desde fuera del area. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_tiros_area_conc_u3` | local | u3 | `fact_opta_stats` | remates que CONCEDE dentro de su area: que tan claras son las situaciones que regala. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_tiros_fuera_conc_u3` | local | u3 | `fact_opta_stats` | remates que concede desde lejos, de bajo riesgo. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_quites_u3` | local | u3 | `fact_opta_stats` | quites intentados. Es defensa como ACCION, no como consecuencia: hasta ahora la defensa se medía por lo que el rival lograba. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_intercepciones_u3` | local | u3 | `fact_opta_stats` | intercepciones. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_rechazos_u3` | local | u3 | `fact_opta_stats` | rechazos. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_bloqueos_u3` | local | u3 | `fact_opta_stats` | bloqueos de jugadores de campo. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_posesion_u3` | local | u3 | `fact_opta_stats` | porcentaje de posesion. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_toques_area_rival_u3` | local | u3 | `fact_opta_stats` | toques en el area rival: dominio territorial, que no tenia ningun equivalente en el feature set. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_prop_tiros_area_u3` | local | u3 | `fact_opta_stats` | que proporcion de sus remates salen desde dentro del area. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_prop_tiros_area_conc_u3` | local | u3 | `fact_opta_stats` | que proporcion de los remates que concede son desde dentro. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_precision_pases_u3` | local | u3 | `fact_opta_stats` | pases completados sobre intentados. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_prop_aereos_ganados_u3` | local | u3 | `fact_opta_stats` | duelos aereos ganados sobre disputados. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_tiros_area_u5` | local | u5 | `fact_opta_stats` | remates desde DENTRO del area. Separado de los de afuera es el proxy de calidad del xG que se creia inalcanzable sin Understat: un remate dentro del area vale unas cuatro veces uno lejano, y el xG agregado de FPL no distingue '2,0 en tres ocasiones claras' de '2,0 en veinte remates de lejos'. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_tiros_fuera_u5` | local | u5 | `fact_opta_stats` | remates desde fuera del area. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_tiros_area_conc_u5` | local | u5 | `fact_opta_stats` | remates que CONCEDE dentro de su area: que tan claras son las situaciones que regala. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_tiros_fuera_conc_u5` | local | u5 | `fact_opta_stats` | remates que concede desde lejos, de bajo riesgo. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_quites_u5` | local | u5 | `fact_opta_stats` | quites intentados. Es defensa como ACCION, no como consecuencia: hasta ahora la defensa se medía por lo que el rival lograba. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_intercepciones_u5` | local | u5 | `fact_opta_stats` | intercepciones. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_rechazos_u5` | local | u5 | `fact_opta_stats` | rechazos. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_bloqueos_u5` | local | u5 | `fact_opta_stats` | bloqueos de jugadores de campo. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_posesion_u5` | local | u5 | `fact_opta_stats` | porcentaje de posesion. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_toques_area_rival_u5` | local | u5 | `fact_opta_stats` | toques en el area rival: dominio territorial, que no tenia ningun equivalente en el feature set. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_prop_tiros_area_u5` | local | u5 | `fact_opta_stats` | que proporcion de sus remates salen desde dentro del area. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_prop_tiros_area_conc_u5` | local | u5 | `fact_opta_stats` | que proporcion de los remates que concede son desde dentro. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_precision_pases_u5` | local | u5 | `fact_opta_stats` | pases completados sobre intentados. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `local_prop_aereos_ganados_u5` | local | u5 | `fact_opta_stats` | duelos aereos ganados sobre disputados. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_tiros_area_u3` | visita | u3 | `fact_opta_stats` | remates desde DENTRO del area. Separado de los de afuera es el proxy de calidad del xG que se creia inalcanzable sin Understat: un remate dentro del area vale unas cuatro veces uno lejano, y el xG agregado de FPL no distingue '2,0 en tres ocasiones claras' de '2,0 en veinte remates de lejos'. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_tiros_fuera_u3` | visita | u3 | `fact_opta_stats` | remates desde fuera del area. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_tiros_area_conc_u3` | visita | u3 | `fact_opta_stats` | remates que CONCEDE dentro de su area: que tan claras son las situaciones que regala. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_tiros_fuera_conc_u3` | visita | u3 | `fact_opta_stats` | remates que concede desde lejos, de bajo riesgo. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_quites_u3` | visita | u3 | `fact_opta_stats` | quites intentados. Es defensa como ACCION, no como consecuencia: hasta ahora la defensa se medía por lo que el rival lograba. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_intercepciones_u3` | visita | u3 | `fact_opta_stats` | intercepciones. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_rechazos_u3` | visita | u3 | `fact_opta_stats` | rechazos. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_bloqueos_u3` | visita | u3 | `fact_opta_stats` | bloqueos de jugadores de campo. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_posesion_u3` | visita | u3 | `fact_opta_stats` | porcentaje de posesion. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_toques_area_rival_u3` | visita | u3 | `fact_opta_stats` | toques en el area rival: dominio territorial, que no tenia ningun equivalente en el feature set. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_prop_tiros_area_u3` | visita | u3 | `fact_opta_stats` | que proporcion de sus remates salen desde dentro del area. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_prop_tiros_area_conc_u3` | visita | u3 | `fact_opta_stats` | que proporcion de los remates que concede son desde dentro. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_precision_pases_u3` | visita | u3 | `fact_opta_stats` | pases completados sobre intentados. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_prop_aereos_ganados_u3` | visita | u3 | `fact_opta_stats` | duelos aereos ganados sobre disputados. Media de los ultimos 3 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_tiros_area_u5` | visita | u5 | `fact_opta_stats` | remates desde DENTRO del area. Separado de los de afuera es el proxy de calidad del xG que se creia inalcanzable sin Understat: un remate dentro del area vale unas cuatro veces uno lejano, y el xG agregado de FPL no distingue '2,0 en tres ocasiones claras' de '2,0 en veinte remates de lejos'. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_tiros_fuera_u5` | visita | u5 | `fact_opta_stats` | remates desde fuera del area. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_tiros_area_conc_u5` | visita | u5 | `fact_opta_stats` | remates que CONCEDE dentro de su area: que tan claras son las situaciones que regala. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_tiros_fuera_conc_u5` | visita | u5 | `fact_opta_stats` | remates que concede desde lejos, de bajo riesgo. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_quites_u5` | visita | u5 | `fact_opta_stats` | quites intentados. Es defensa como ACCION, no como consecuencia: hasta ahora la defensa se medía por lo que el rival lograba. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_intercepciones_u5` | visita | u5 | `fact_opta_stats` | intercepciones. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_rechazos_u5` | visita | u5 | `fact_opta_stats` | rechazos. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_bloqueos_u5` | visita | u5 | `fact_opta_stats` | bloqueos de jugadores de campo. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_posesion_u5` | visita | u5 | `fact_opta_stats` | porcentaje de posesion. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_toques_area_rival_u5` | visita | u5 | `fact_opta_stats` | toques en el area rival: dominio territorial, que no tenia ningun equivalente en el feature set. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_prop_tiros_area_u5` | visita | u5 | `fact_opta_stats` | que proporcion de sus remates salen desde dentro del area. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_prop_tiros_area_conc_u5` | visita | u5 | `fact_opta_stats` | que proporcion de los remates que concede son desde dentro. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_precision_pases_u5` | visita | u5 | `fact_opta_stats` | pases completados sobre intentados. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+| `visita_prop_aereos_ganados_u5` | visita | u5 | `fact_opta_stats` | duelos aereos ganados sobre disputados. Media de los ultimos 5 partidos DE PREMIER -- mezclar competencias distorsiona: 25 remates contra un equipo de cuarta division no dicen lo mismo que 25 contra el City |
+
 ### Contexto — 10 columnas
 
 | Columna | Lado | Ventana | Fuente | Cálculo |
@@ -362,7 +424,7 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `fdr_visita` | visita | — | `fact_fixture` | FDR de FPL para el visitante (team_a_difficulty), escala 1-5 |
 | `fdr_dif` | — | — | `derivada` | fdr_local - fdr_visita |
 
-### Diferenciales — 21 columnas
+### Diferenciales — 24 columnas
 
 | Columna | Lado | Ventana | Fuente | Cálculo |
 |---|---|---|---|---|
@@ -387,6 +449,9 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `dif_copas_acumuladas` | — | — | `derivada` | local_copas_acumuladas - visita_copas_acumuladas |
 | `dif_importancia_max` | — | — | `derivada` | local_importancia_max - visita_importancia_max |
 | `dif_pts_todo_u5` | — | — | `derivada` | local_pts_todo_u5 - visita_pts_todo_u5 |
+| `dif_prop_tiros_area_u5` | — | — | `derivada` | local_prop_tiros_area_u5 - visita_prop_tiros_area_u5 |
+| `dif_posesion_u5` | — | — | `derivada` | local_posesion_u5 - visita_posesion_u5 |
+| `dif_quites_u5` | — | — | `derivada` | local_quites_u5 - visita_quites_u5 |
 
 ## Columnas que NO son features
 

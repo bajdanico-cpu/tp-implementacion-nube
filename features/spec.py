@@ -401,6 +401,44 @@ def _competencias() -> list[Feature]:
             for lado in LADOS for n, f in COMPETENCIAS_POR_LADO]
 
 
+OPTA_DESC = {
+    "tiros_area": "remates desde DENTRO del area. Separado de los de afuera es el proxy "
+                  "de calidad del xG que se creia inalcanzable sin Understat: un remate "
+                  "dentro del area vale unas cuatro veces uno lejano, y el xG agregado de "
+                  "FPL no distingue '2,0 en tres ocasiones claras' de '2,0 en veinte "
+                  "remates de lejos'",
+    "tiros_fuera": "remates desde fuera del area",
+    "tiros_area_conc": "remates que CONCEDE dentro de su area: que tan claras son las "
+                       "situaciones que regala",
+    "tiros_fuera_conc": "remates que concede desde lejos, de bajo riesgo",
+    "quites": "quites intentados. Es defensa como ACCION, no como consecuencia: hasta "
+              "ahora la defensa se medía por lo que el rival lograba",
+    "intercepciones": "intercepciones",
+    "rechazos": "rechazos",
+    "bloqueos": "bloqueos de jugadores de campo",
+    "posesion": "porcentaje de posesion",
+    "toques_area_rival": "toques en el area rival: dominio territorial, que no tenia "
+                         "ningun equivalente en el feature set",
+    "prop_tiros_area": "que proporcion de sus remates salen desde dentro del area",
+    "prop_tiros_area_conc": "que proporcion de los remates que concede son desde dentro",
+    "precision_pases": "pases completados sobre intentados",
+    "prop_aereos_ganados": "duelos aereos ganados sobre disputados",
+}
+
+
+def _opta() -> list[Feature]:
+    """Ventanas sobre las estadisticas de Opta: 14 stats x 2 ventanas x 2 lados = 56."""
+    from features.opta import A_RODAR, VENTANAS
+
+    return [Feature(nombre=f"{lado}_{c}_u{n}", grupo="Opta", fuente="fact_opta_stats",
+                    formula=f"{OPTA_DESC.get(c, c)}. Media de los ultimos {n} partidos "
+                            f"DE PREMIER -- mezclar competencias distorsiona: 25 remates "
+                            f"contra un equipo de cuarta division no dicen lo mismo que "
+                            f"25 contra el City",
+                    lado=lado, ventana=f"u{n}")
+            for lado in LADOS for n in VENTANAS for c in A_RODAR]
+
+
 def _dificultad() -> list[Feature]:
     return [
         Feature("fdr_local", "Dificultad", "fact_fixture",
@@ -416,6 +454,7 @@ DIFERENCIALES = (
     "pts_camp", "pos_tabla_camp", "ppp_camp", "dias_descanso", "n_hist",
     "elo", "elo_delta_u5", "racha", "sorpresa_u10", "xg_por_tiro_u5",
     "partidos_todo_14d", "copas_acumuladas", "importancia_max", "pts_todo_u5",
+    "prop_tiros_area_u5", "posesion_u5", "quites_u5",
 )
 
 
@@ -432,7 +471,7 @@ def _diferenciales() -> list[Feature]:
 def _build() -> list[Feature]:
     out: list[Feature] = []
     for fn in (_forma, _forma_temp, _forma_cond, _campeonato, _h2h,
-               _continuidad, _estado, _competencias, _contexto, _dificultad,
+               _continuidad, _estado, _competencias, _opta, _contexto, _dificultad,
                _diferenciales):
         out.extend(fn())
     nombres = [f.nombre for f in out]
