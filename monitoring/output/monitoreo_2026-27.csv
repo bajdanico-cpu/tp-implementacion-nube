@@ -1,0 +1,2 @@
+season,gameweek,n,accuracy,f1_macro,log_loss,acc_siempre_local,acc_prior,ll_prior,confianza_media,gana_a_local,gana_al_prior
+2026-27,1,10,0.5,0.3333333333333333,1.1434675455093384,0.7,0.7,0.9329620316664679,0.5062272548675537,False,False

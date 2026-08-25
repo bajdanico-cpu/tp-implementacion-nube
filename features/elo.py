@@ -160,12 +160,23 @@ def extras(largo: pd.DataFrame) -> pd.DataFrame:
     for c in ("tiros_conc", "tiros_arco_conc", "xg_diff", "xgc_diff"):
         d[f"{c}_u5"] = g[c].transform(lambda s: s.rolling(5, min_periods=1).mean())
 
-    # Congestión de calendario: cuántos partidos jugó en los 14 días previos.
-    d["partidos_14d"] = [
-        int(((d.loc[d["team_short"] == t, "kickoff_time"] > k - pd.Timedelta(days=14))
-             & (d.loc[d["team_short"] == t, "kickoff_time"] <= k)).sum())
-        for t, k in zip(d["team_short"], d["kickoff_time"])
-    ]
+    # Congestión de calendario, en tres ventanas. Cada una capta algo distinto:
+    #
+    #   7d   "jugo entre semana". Es lo mas cerca que se puede estar de detectar un
+    #        compromiso de copa o de Europa sin una fuente externa de esos calendarios.
+    #   14d  la carga de las ultimas dos semanas.
+    #   21d  la acumulada: no es lo mismo un pico aislado que tres semanas seguidas.
+    #
+    # ⚠️ Sólo cuenta partidos de PREMIER. Un equipo que sigue en Champions y en la Copa
+    # de la Liga juega mucho mas de lo que estas columnas ven. La fuente que lo
+    # resolveria (openfootball) no publica 2026-27, asi que usarla seria entrenar con
+    # una feature que en produccion vale NaN. Queda anotado como deuda.
+    for dias in (7, 14, 21):
+        d[f"partidos_{dias}d"] = [
+            int(((d.loc[d["team_short"] == t, "kickoff_time"] > k - pd.Timedelta(days=dias))
+                 & (d.loc[d["team_short"] == t, "kickoff_time"] <= k)).sum())
+            for t, k in zip(d["team_short"], d["kickoff_time"])
+        ]
 
     # Racha: puntos de los últimos 3 contra el promedio de lo que va de temporada.
     d["pts_u3_tmp"] = g["pts"].transform(lambda s: s.rolling(3, min_periods=1).mean())
@@ -174,13 +185,14 @@ def extras(largo: pd.DataFrame) -> pd.DataFrame:
     d["racha"] = d["pts_u3_tmp"] - d["pts_exp_tmp"]
 
     cols = ["tiros_conc_u5", "tiros_arco_conc_u5", "xg_diff_u5", "xgc_diff_u5",
-            "partidos_14d", "racha"]
+            "partidos_7d", "partidos_14d", "partidos_21d", "racha"]
     return d[["season", "fixture_id", "team_short", "kickoff_time"] + cols]
 
 
 COLUMNAS = ["elo", "elo_delta_u3", "elo_delta_u5", "elo_delta_u10",
             "tiros_conc_u5", "tiros_arco_conc_u5", "xg_diff_u5", "xgc_diff_u5",
-            "partidos_14d", "racha", "sorpresa_u5", "sorpresa_u10"]
+            "partidos_7d", "partidos_14d", "partidos_21d", "racha",
+            "sorpresa_u5", "sorpresa_u10"]
 
 
 def construir(largo: pd.DataFrame) -> pd.DataFrame:

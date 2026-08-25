@@ -1,0 +1,262 @@
+{
+  "holdout": {
+    "n": 380,
+    "accuracy": 0.5052631578947369,
+    "f1_macro": 0.40220384634702766,
+    "precision_macro": 0.5950208865395656,
+    "recall_macro": 0.45769813898468864,
+    "f1_away": 0.5095057034220533,
+    "precision_away": 0.44966442953020136,
+    "recall_away": 0.5877192982456141,
+    "f1_draw": 0.07339449541284404,
+    "precision_draw": 0.8,
+    "recall_draw": 0.038461538461538464,
+    "f1_home": 0.6237113402061856,
+    "precision_home": 0.5353982300884956,
+    "recall_home": 0.7469135802469136,
+    "matriz_confusion": [
+      [
+        67,
+        1,
+        46
+      ],
+      [
+        41,
+        4,
+        59
+      ],
+      [
+        41,
+        0,
+        121
+      ]
+    ],
+    "clases": [
+      "away",
+      "draw",
+      "home"
+    ],
+    "log_loss": 1.0309516191482544,
+    "accuracy_ic95": [
+      0.4551973684210527,
+      0.5552631578947368
+    ],
+    "best_iteration": 143,
+    "n_train": 1004,
+    "baselines": {
+      "siempre_local": {
+        "nombre": "siempre local",
+        "n": 380,
+        "accuracy": 0.4263157894736842,
+        "log_loss": NaN
+      },
+      "prior_de_clase": {
+        "nombre": "prior de clase (frecuencias del train)",
+        "n": 380,
+        "accuracy": 0.4263157894736842,
+        "log_loss": 1.0845110721635958,
+        "prior": {
+          "away": 0.3192982456140351,
+          "draw": 0.22982456140350876,
+          "home": 0.45087719298245615
+        }
+      },
+      "cuotas_de_cierre": {
+        "nombre": "cuotas de cierre (odds_avg_close)",
+        "n": 380,
+        "accuracy": 0.49473684210526314,
+        "log_loss": 1.0117668726695335,
+        "overround_medio": 1.0567305097980337
+      }
+    },
+    "calibracion": [
+      {
+        "clase": "away",
+        "bin": 0,
+        "n": 4,
+        "p_media": 0.08559129387140274,
+        "frecuencia_real": 0.0
+      },
+      {
+        "clase": "away",
+        "bin": 1,
+        "n": 84,
+        "p_media": 0.1522236168384552,
+        "frecuencia_real": 0.14285714285714285
+      },
+      {
+        "clase": "away",
+        "bin": 2,
+        "n": 98,
+        "p_media": 0.24554896354675293,
+        "frecuencia_real": 0.24489795918367346
+      },
+      {
+        "clase": "away",
+        "bin": 3,
+        "n": 64,
+        "p_media": 0.3474213480949402,
+        "frecuencia_real": 0.3125
+      },
+      {
+        "clase": "away",
+        "bin": 4,
+        "n": 66,
+        "p_media": 0.44865840673446655,
+        "frecuencia_real": 0.42424242424242425
+      },
+      {
+        "clase": "away",
+        "bin": 5,
+        "n": 46,
+        "p_media": 0.5385671854019165,
+        "frecuencia_real": 0.43478260869565216
+      },
+      {
+        "clase": "away",
+        "bin": 6,
+        "n": 18,
+        "p_media": 0.6436174511909485,
+        "frecuencia_real": 0.5555555555555556
+      },
+      {
+        "clase": "draw",
+        "bin": 0,
+        "n": 2,
+        "p_media": 0.09815722703933716,
+        "frecuencia_real": 0.5
+      },
+      {
+        "clase": "draw",
+        "bin": 1,
+        "n": 102,
+        "p_media": 0.17255239188671112,
+        "frecuencia_real": 0.24509803921568626
+      },
+      {
+        "clase": "draw",
+        "bin": 2,
+        "n": 225,
+        "p_media": 0.2437494397163391,
+        "frecuencia_real": 0.28
+      },
+      {
+        "clase": "draw",
+        "bin": 3,
+        "n": 48,
+        "p_media": 0.32987430691719055,
+        "frecuencia_real": 0.25
+      },
+      {
+        "clase": "draw",
+        "bin": 4,
+        "n": 3,
+        "p_media": 0.42550334334373474,
+        "frecuencia_real": 1.0
+      },
+      {
+        "clase": "home",
+        "bin": 1,
+        "n": 32,
+        "p_media": 0.16578185558319092,
+        "frecuencia_real": 0.125
+      },
+      {
+        "clase": "home",
+        "bin": 2,
+        "n": 75,
+        "p_media": 0.2535371780395508,
+        "frecuencia_real": 0.26666666666666666
+      },
+      {
+        "clase": "home",
+        "bin": 3,
+        "n": 63,
+        "p_media": 0.3494125306606293,
+        "frecuencia_real": 0.36507936507936506
+      },
+      {
+        "clase": "home",
+        "bin": 4,
+        "n": 64,
+        "p_media": 0.45512184500694275,
+        "frecuencia_real": 0.4375
+      },
+      {
+        "clase": "home",
+        "bin": 5,
+        "n": 77,
+        "p_media": 0.550607442855835,
+        "frecuencia_real": 0.5324675324675324
+      },
+      {
+        "clase": "home",
+        "bin": 6,
+        "n": 46,
+        "p_media": 0.652133584022522,
+        "frecuencia_real": 0.717391304347826
+      },
+      {
+        "clase": "home",
+        "bin": 7,
+        "n": 22,
+        "p_media": 0.7352005243301392,
+        "frecuencia_real": 0.5909090909090909
+      },
+      {
+        "clase": "home",
+        "bin": 8,
+        "n": 1,
+        "p_media": 0.8202341198921204,
+        "frecuencia_real": 0.0
+      }
+    ],
+    "criterio_bloque5": {
+      "accuracy_baseline_prior": 0.4263157894736842,
+      "cumple": true
+    }
+  },
+  "apuestas": {
+    "modelo": {
+      "n_apuestas": 366,
+      "unidades_apostadas": 366.0,
+      "ganancia_neta": -19.1,
+      "roi": -0.05218579234972678,
+      "tasa_acierto": 0.2978142076502732,
+      "cuota_media": 4.301912568306011,
+      "drawdown_maximo": 23.899999999999995,
+      "por_clase": {
+        "away": {
+          "count": 156,
+          "sum": -17.21
+        },
+        "draw": {
+          "count": 94,
+          "sum": 11.829999999999998
+        },
+        "home": {
+          "count": 116,
+          "sum": -13.72
+        }
+      },
+      "ev_medio_estimado": 0.2691476940074579
+    },
+    "siempre_local": {
+      "n_apuestas": 380,
+      "unidades_apostadas": 380.0,
+      "ganancia_neta": -32.599999999999994,
+      "roi": -0.08578947368421051,
+      "tasa_acierto": 0.4263157894736842,
+      "cuota_media": 2.700421052631579,
+      "drawdown_maximo": 55.75,
+      "por_clase": {
+        "home": {
+          "count": 380,
+          "sum": -32.6
+        }
+      }
+    },
+    "umbral_ev": 0.05,
+    "overround_medio": 1.0567305097980337
+  }
+}

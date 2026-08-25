@@ -298,7 +298,13 @@ ESTADO_POR_LADO = (
                    "`gf_u5` ni `xg_u5` capturan esto por separado"),
     ("xgc_diff_u5", "goles recibidos menos xG concedido en los ultimos 5: lo mismo del "
                     "lado defensivo, incluye el rendimiento del arquero"),
-    ("partidos_14d", "partidos jugados en los 14 dias previos: congestion de calendario"),
+    ("partidos_7d", "partidos de Premier jugados en los 7 dias previos. Detecta el "
+                    "'jugo entre semana', que es lo mas cerca que se puede estar de "
+                    "identificar un compromiso de copa o de Europa sin el calendario de "
+                    "esas competencias"),
+    ("partidos_14d", "partidos jugados en los 14 dias previos: la carga de dos semanas"),
+    ("partidos_21d", "partidos en 21 dias: la carga acumulada. No es lo mismo un pico "
+                     "aislado que tres semanas seguidas de partido cada tres dias"),
     ("racha", "puntos de los ultimos 3 partidos menos el promedio de lo que va de la "
               "temporada. Captura si el equipo esta por encima o por debajo de su nivel"),
     ("sorpresa_u5", "cuanto se apartaron los ultimos 5 resultados de lo que el Elo "

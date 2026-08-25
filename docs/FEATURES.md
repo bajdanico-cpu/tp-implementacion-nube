@@ -63,8 +63,8 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 ## Resumen
 
 - **Versión del feature set:** `v2`
-- **Features:** 171
-- **Columnas totales:** 193 (171 features + 22 no-features)
+- **Features:** 175
+- **Columnas totales:** 197 (175 features + 22 no-features)
 - **Grano:** un partido = una fila. 1.520 filas (4 temporadas × 380).
 
 | Grupo | Columnas |
@@ -75,11 +75,11 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 | Puntaje de campeonato | 14 |
 | Head-to-head | 10 |
 | Continuidad de plantel | 2 |
-| Elo y estado | 24 |
+| Elo y estado | 28 |
 | Contexto | 10 |
 | Dificultad | 3 |
 | Diferenciales | 16 |
-| **TOTAL DE FEATURES** | **171** |
+| **TOTAL DE FEATURES** | **175** |
 
 ## Las 16 estadísticas base
 
@@ -258,7 +258,7 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `local_continuidad_plantel_u5` | local | u5 | `fact_player_gw` | proporción de los minutos de los últimos 5 partidos que jugaron futbolistas que también jugaron el partido MÁS RECIENTE del equipo. 100% leak-free: sólo mira partidos pasados. Se desploma cuando el plantel se renovó, que es justo cuando la forma pasada deja de representar al equipo actual. Medido: entre temporadas rota ~40% de los minutos |
 | `visita_continuidad_plantel_u5` | visita | u5 | `fact_player_gw` | proporción de los minutos de los últimos 5 partidos que jugaron futbolistas que también jugaron el partido MÁS RECIENTE del equipo. 100% leak-free: sólo mira partidos pasados. Se desploma cuando el plantel se renovó, que es justo cuando la forma pasada deja de representar al equipo actual. Medido: entre temporadas rota ~40% de los minutos |
 
-### Elo y estado — 24 columnas
+### Elo y estado — 28 columnas
 
 | Columna | Lado | Ventana | Fuente | Cálculo |
 |---|---|---|---|---|
@@ -270,7 +270,9 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `local_tiros_arco_conc_u5` | local | — | `derivada` | tiros al arco concedidos en los ultimos 5 |
 | `local_xg_diff_u5` | local | — | `derivada` | goles menos xG en los ultimos 5: suerte de definicion. Es fuertemente reversible a la media, asi que un valor alto anticipa una caida. Ni `gf_u5` ni `xg_u5` capturan esto por separado |
 | `local_xgc_diff_u5` | local | — | `derivada` | goles recibidos menos xG concedido en los ultimos 5: lo mismo del lado defensivo, incluye el rendimiento del arquero |
-| `local_partidos_14d` | local | — | `derivada` | partidos jugados en los 14 dias previos: congestion de calendario |
+| `local_partidos_7d` | local | — | `derivada` | partidos de Premier jugados en los 7 dias previos. Detecta el 'jugo entre semana', que es lo mas cerca que se puede estar de identificar un compromiso de copa o de Europa sin el calendario de esas competencias |
+| `local_partidos_14d` | local | — | `derivada` | partidos jugados en los 14 dias previos: la carga de dos semanas |
+| `local_partidos_21d` | local | — | `derivada` | partidos en 21 dias: la carga acumulada. No es lo mismo un pico aislado que tres semanas seguidas de partido cada tres dias |
 | `local_racha` | local | — | `derivada` | puntos de los ultimos 3 partidos menos el promedio de lo que va de la temporada. Captura si el equipo esta por encima o por debajo de su nivel |
 | `local_sorpresa_u5` | local | — | `derivada` | cuanto se apartaron los ultimos 5 resultados de lo que el Elo esperaba: \|real - esperado\| promediado. Mide que tan IMPREDECIBLE viene siendo el equipo, no en que direccion. Es informacion sobre la confiabilidad de la prediccion. No usa las predicciones del modelo -- eso seria un bucle de realimentacion -- sino la expectativa del Elo, que sale solo de resultados pasados |
 | `local_sorpresa_u10` | local | — | `derivada` | lo mismo sobre 10 partidos: menos ruidoso, mas estructural. Medido en 2025-26, los mas impredecibles fueron CHE, NEW y AVL; los mas predecibles BUR y BRE (ser consistentemente malo tambien es predecible) |
@@ -282,7 +284,9 @@ Más `dg`, derivada en la tabla larga: diferencia de gol del partido (gf - gc).
 | `visita_tiros_arco_conc_u5` | visita | — | `derivada` | tiros al arco concedidos en los ultimos 5 |
 | `visita_xg_diff_u5` | visita | — | `derivada` | goles menos xG en los ultimos 5: suerte de definicion. Es fuertemente reversible a la media, asi que un valor alto anticipa una caida. Ni `gf_u5` ni `xg_u5` capturan esto por separado |
 | `visita_xgc_diff_u5` | visita | — | `derivada` | goles recibidos menos xG concedido en los ultimos 5: lo mismo del lado defensivo, incluye el rendimiento del arquero |
-| `visita_partidos_14d` | visita | — | `derivada` | partidos jugados en los 14 dias previos: congestion de calendario |
+| `visita_partidos_7d` | visita | — | `derivada` | partidos de Premier jugados en los 7 dias previos. Detecta el 'jugo entre semana', que es lo mas cerca que se puede estar de identificar un compromiso de copa o de Europa sin el calendario de esas competencias |
+| `visita_partidos_14d` | visita | — | `derivada` | partidos jugados en los 14 dias previos: la carga de dos semanas |
+| `visita_partidos_21d` | visita | — | `derivada` | partidos en 21 dias: la carga acumulada. No es lo mismo un pico aislado que tres semanas seguidas de partido cada tres dias |
 | `visita_racha` | visita | — | `derivada` | puntos de los ultimos 3 partidos menos el promedio de lo que va de la temporada. Captura si el equipo esta por encima o por debajo de su nivel |
 | `visita_sorpresa_u5` | visita | — | `derivada` | cuanto se apartaron los ultimos 5 resultados de lo que el Elo esperaba: \|real - esperado\| promediado. Mide que tan IMPREDECIBLE viene siendo el equipo, no en que direccion. Es informacion sobre la confiabilidad de la prediccion. No usa las predicciones del modelo -- eso seria un bucle de realimentacion -- sino la expectativa del Elo, que sale solo de resultados pasados |
 | `visita_sorpresa_u10` | visita | — | `derivada` | lo mismo sobre 10 partidos: menos ruidoso, mas estructural. Medido en 2025-26, los mas impredecibles fueron CHE, NEW y AVL; los mas predecibles BUR y BRE (ser consistentemente malo tambien es predecible) |
