@@ -267,7 +267,7 @@ a{color:var(--accent); text-underline-offset:3px}
       <thead><tr><th>Fuente</th><th>Aporta</th><th>Histórico</th><th>2026-27</th><th>Veredicto</th></tr></thead>
       <tbody>
         <tr class="hi"><td><strong>API de premierleague.com</strong></td>
-          <td>Copas y Europa, oficial</td>
+          <td>Copas, Europa <strong>y 141 stats de Opta por partido</strong></td>
           <td class="good">22–35 temporadas</td><td class="good">Sí</td>
           <td><strong>Gratis, sin clave y sin cuota.</strong> Es la que hay que usar</td></tr>
         <tr><td>TheSportsDB</td><td>Copas y Europa, por equipo</td>
@@ -305,6 +305,18 @@ a{color:var(--accent); text-underline-offset:3px}
     ve, concentrados en los equipos que llegan lejos. La API oficial los tiene todos, con
     <code>kickoff</code> y equipos, listos para recalcular las ventanas de congestión.</p>
   </div>
+  <div class="note">
+    <p><strong>Y además trae estadísticas, no sólo fixtures.</strong>
+    <code>/stats/match/{id}</code> devuelve <strong>141 estadísticas de Opta por equipo</strong>,
+    verificadas en las cuatro temporadas de entrenamiento y también en copas y Champions.
+    Entre ellas, tres cosas que hoy no tenemos: <code>attempts_ibox</code> /
+    <code>attempts_obox</code> —tiros dentro y fuera del área, que es el proxy de calidad de
+    xG que creíamos que exigía Understat—, las defensivas reales
+    (<code>total_tackle</code>, <code>interception</code>, <code>total_clearance</code>,
+    <code>outfielder_block</code>) y el dominio territorial
+    (<code>possession_percentage</code>, <code>touches_in_opp_box</code>).
+    No trae xG: eso Opta lo licencia aparte.</p>
+  </div>
   <div class="card">
 <pre><span class="c"># la API que resuelve el pendiente — sin clave, sin cuota</span>
 B = "https://footballapi.pulselive.com/football"
@@ -312,7 +324,8 @@ headers = {"Origin": "https://www.premierleague.com"}
 
 <span class="c"># comps: 1=Premier  2=Champions  3=Europa  4=FA Cup  5=EFL Cup</span>
 GET {B}/competitions/5/compseasons?pageSize=100      <span class="c"># ids de temporada</span>
-<b>GET {B}/fixtures?comps=5&amp;compSeasons=812&amp;pageSize=400</b>   <span class="c"># los partidos</span></pre>
+<b>GET {B}/fixtures?comps=5&amp;compSeasons=812&amp;pageSize=400</b>   <span class="c"># los partidos</span>
+<b>GET {B}/stats/match/125161</b>                          <span class="c"># 141 stats por equipo</span></pre>
   </div>
 </section>
 
