@@ -62,7 +62,7 @@ equipo. Por eso existen `continuidad_plantel_u5`, las ventanas `u5_temp` y `pj_c
 
 ## Resumen
 
-- **Versión del feature set:** `v2`
+- **Versión del feature set:** `v2.a29de7c7.192`
 - **Features:** 192
 - **Columnas totales:** 214 (192 features + 22 no-features)
 - **Grano:** un partido = una fila. 1.520 filas (4 temporadas × 380).

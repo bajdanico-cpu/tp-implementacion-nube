@@ -222,3 +222,20 @@ def test_docs_features_esta_sincronizado_con_spec():
     assert actual == spec.render_docs(), (
         "docs/FEATURES.md quedó desfasado del spec. "
         "Regeneralo con `python -m features.spec --docs`.")
+
+
+def test_la_version_del_feature_set_se_deriva_del_contenido():
+    """Mantenerla a mano fallo: quedo pegada en "v2" mientras el set pasaba por 159, 164,
+    171, 175, 184 y 192 columnas. Seis modelos guardados con la misma etiqueta.
+
+    Derivandola de un hash de la lista, cambiar una sola feature cambia la version.
+    """
+    actual = spec.FEATURE_SET_VERSION
+    assert actual == spec._version_features(spec.FEATURES)
+    assert actual.endswith(str(len(spec.FEATURES)))
+    # y una lista distinta produce una version distinta
+    assert spec._version_features(spec.FEATURES[:-1]) != actual
+
+
+def test_gold_registra_la_version_con_la_que_se_construyo(gold_tp):
+    assert (gold_tp["feature_set_version"] == spec.FEATURE_SET_VERSION).all()

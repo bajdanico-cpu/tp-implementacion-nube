@@ -31,7 +31,24 @@ from pathlib import Path
 
 from common.config import CFG, PROJECT_ROOT
 
-FEATURE_SET_VERSION = "v2"   # v2 agrega Elo y estado del equipo (14 columnas)
+# La version del feature set se DERIVA de la lista de features, no se escribe a mano.
+#
+# Mantenerla manual fallo: quedo pegada en "v2" mientras el set pasaba por 159, 164, 171,
+# 175, 184 y 192 columnas. Seis modelos distintos guardados con la misma etiqueta, que es
+# exactamente lo que una version tiene que evitar. Derivarla de un hash del contenido hace
+# imposible que se desincronice: si cambia una feature, cambia la version.
+#
+# El numero mayor se sube a mano cuando el cambio es conceptual; el hash distingue todo lo
+# demas.
+FEATURE_SET_MAJOR = "v2"
+
+
+def _version_features(nombres: list[str]) -> str:
+    """`v2.a1b2c3d4.192` — mayor, hash del contenido y cantidad, legible de un vistazo."""
+    import hashlib
+
+    h = hashlib.sha1("|".join(nombres).encode("utf-8")).hexdigest()[:8]
+    return f"{FEATURE_SET_MAJOR}.{h}.{len(nombres)}"
 
 LADOS = ("local", "visita")
 
@@ -390,6 +407,7 @@ def _build() -> list[Feature]:
 
 FEATURE_SPECS: list[Feature] = _build()
 FEATURES: list[str] = [f.nombre for f in FEATURE_SPECS]
+FEATURE_SET_VERSION: str = _version_features(FEATURES)
 
 # ---------------------------------------------------------------------------
 # Columnas que NO son features
