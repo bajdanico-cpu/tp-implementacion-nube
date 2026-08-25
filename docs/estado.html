@@ -266,9 +266,13 @@ a{color:var(--accent); text-underline-offset:3px}
     <table>
       <thead><tr><th>Fuente</th><th>Aporta</th><th>Histórico</th><th>2026-27</th><th>Veredicto</th></tr></thead>
       <tbody>
-        <tr class="hi"><td><strong>TheSportsDB</strong></td><td>Copas y Europa, por equipo</td>
+        <tr class="hi"><td><strong>API de premierleague.com</strong></td>
+          <td>Copas y Europa, oficial</td>
+          <td class="good">22–35 temporadas</td><td class="good">Sí</td>
+          <td><strong>Gratis, sin clave y sin cuota.</strong> Es la que hay que usar</td></tr>
+        <tr><td>TheSportsDB</td><td>Copas y Europa, por equipo</td>
           <td class="good">Sí</td><td class="good">Sí</td>
-          <td>Lo mejor que hay. Bloquea la <strong>cuota gratuita</strong>: 5 partidos por consulta</td></tr>
+          <td>Ya no hace falta: el tier gratuito da 5 partidos por consulta</td></tr>
         <tr><td>openfootball</td><td>FA Cup, EFL, Champions</td>
           <td class="good">Sí</td><td class="bad">No</td><td>Sin la temporada actual, no sirve</td></tr>
         <tr><td>Understat</td><td>npxG, tiros por jugador</td>
@@ -296,6 +300,19 @@ a{color:var(--accent); text-underline-offset:3px}
     aportaron nada — <em>justamente porque sólo ven partidos de Premier</em>. Un equipo que
     sigue en semis de Champions y en la Copa de la Liga juega mucho más de lo que esas
     columnas registran. El resultado nulo es evidencia a favor de la hipótesis, no en contra.</p>
+    <p style="margin-top:10px">En 2025-26 los equipos de Premier jugaron <strong>36 partidos
+    de EFL Cup, 43 de FA Cup y 69 de Champions</strong>: 148 partidos que hoy el pipeline no
+    ve, concentrados en los equipos que llegan lejos. La API oficial los tiene todos, con
+    <code>kickoff</code> y equipos, listos para recalcular las ventanas de congestión.</p>
+  </div>
+  <div class="card">
+<pre><span class="c"># la API que resuelve el pendiente — sin clave, sin cuota</span>
+B = "https://footballapi.pulselive.com/football"
+headers = {"Origin": "https://www.premierleague.com"}
+
+<span class="c"># comps: 1=Premier  2=Champions  3=Europa  4=FA Cup  5=EFL Cup</span>
+GET {B}/competitions/5/compseasons?pageSize=100      <span class="c"># ids de temporada</span>
+<b>GET {B}/fixtures?comps=5&amp;compSeasons=812&amp;pageSize=400</b>   <span class="c"># los partidos</span></pre>
   </div>
 </section>
 
