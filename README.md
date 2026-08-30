@@ -59,8 +59,9 @@ de nada**. Verificado en una GTX 1650 (4 GB, compute capability 7.5).
 Todo corre en local, bajo demanda. No hace falta ninguna credencial de nube.
 
 ```powershell
-# 1. Ingesta Bronze — las tres fuentes
-python -m ingestion.run
+# 1. Ingesta Bronze — las cuatro fuentes
+python -m ingestion.run                # las tres publicas de siempre
+python -m ingestion.bronze_pulselive   # la API oficial: copas, Europa y stats de Opta
 
 # Variantes útiles
 python -m ingestion.run --source fpl            # sólo snapshot de la API (el ciclo en vivo)
@@ -69,21 +70,31 @@ python -m ingestion.run --season 2025-26        # una temporada puntual
 python -m ingestion.run --force                 # ignora la caché y re-baja todo
 
 # 2. Silver — normalización
-python -m transform.silver
+python -m transform.silver             # FPL + football-data
+python -m transform.competencias       # fact_match_comp: las cinco competencias
+python -m transform.opta_stats         # fact_opta_stats: ~180 stats por equipo-partido
 
 # 3. Tests — incluye el control anti-leakage
 pytest
 
-# 4. Gold — la tabla de features (1.520 x 165, de las cuales 143 son features)
+# 4. Gold — la tabla de features (1.530 x 301, de las cuales 279 son features)
 python -m features.gold_tp
 python -m features.spec --docs      # regenera docs/FEATURES.md desde el contrato
 
 # 5. Entrenamiento y evaluación
-python -m training.run --todos                             # los tres modelos, comparados
+python -m training.run --sin-holdout                       # el modelo que se REPORTA
+python -m training.run                                     # el que SIRVE (incluye 2025-26)
 python -m training.run --model xgb_gbt --walk-forward      # 38 folds, simula el ciclo
+python -m training.ablacion                                # cuanto aporta cada bloque
 python -m training.benchmark_gpu                           # CPU vs GPU con barrido de escala
 python -m training.compare_models                          # grilla 7 modelos x 3 variantes
 python -m training.analysis                                # donde le gana a cada vara
+python -m training.reproducir                              # que hace falta para rehacer uno
+
+# 5 bis. Operación — el ciclo cerrado
+python -m serving.predict --gw 3                           # predice y registra la fecha
+python -m serving.predict --gw 1 --evaluar                 # una ya jugada, contra el real
+python -m monitoring.temporada_actual                      # metricas en vivo de 2026-27
 
 # 6. El notebook que recorre todo
 python notebooks/00_recorrido_completo.py                  # regenera el .ipynb
@@ -100,13 +111,14 @@ actual sí, en cada corrida. La API de FPL nunca se cachea: cada snapshot tiene 
 
 ## Fuentes de datos
 
-Las tres son complementarias, no alternativas.
+Las cuatro son complementarias, no alternativas. **Ninguna pide credenciales.**
 
 | Fuente | Granularidad | Cobertura | Qué aporta que nadie más aporta |
 |---|---|---|---|
 | **football-data.co.uk** | 1 fila = 1 partido | 2010-11 → actual (se ingesta desde 2022-23) | **Cuotas de cierre** — el baseline duro y una feature fuerte |
 | **vaastav/Fantasy-Premier-League** | 1 fila = 1 jugador × fecha | 2016-17 → 2025-26 | **El histórico jugador-fecha**. Ver nota abajo |
 | **API oficial de FPL** | presente y futuro | temporada en curso | Fixtures de la fecha que viene, **deadlines** y el resultado apenas termina el partido |
+| **API de premierleague.com** | 1 fila = 1 partido, todas las competencias | 22-35 temporadas | **Copas y Europa** —lo único que veía el pipeline era la Premier— y **~180 estadísticas de Opta** por equipo y partido |
 
 ### Por qué vaastav y no la API para el histórico
 
@@ -197,8 +209,10 @@ Estado tras correr la ingesta y `transform.silver`:
 |---|---|---|
 | `dim_team` | temporada × equipo | 100 |
 | `fact_fixture` | fixture (con **deadline**) | 1.900 |
-| `fact_match` | partido (resultado + cuotas) | 1.520 |
-| `fact_player_gw` | jugador × fecha | 113.270 |
+| `fact_match` | partido (resultado + cuotas) | 1.530 |
+| `fact_player_gw` | jugador × fecha | 113.880 |
+| `fact_match_comp` | equipo × partido, las 5 competencias | 4.700 |
+| `fact_opta_stats` | equipo × partido, stats de Opta | 3.058 |
 
 El cruce football-data ↔ FPL da **100% en las cuatro temporadas cerradas**.
 
@@ -231,31 +245,51 @@ sólo avisa por warning. Usar `eda.baselines.CLASES_ORD`.
 ## Estado
 
 - [x] **Fase 0** — andamiaje, entorno, config, capa de storage
-- [x] **Fase 1** — ingesta Bronze de las tres fuentes (26 MB, append-only)
+- [x] **Fase 1** — ingesta Bronze de las cuatro fuentes (append-only)
 - [x] **Fase 2** — Silver: mapeo de equipos y normalización (cruce 100%)
 - [x] **Fase 3** — tests: anti-leakage, schemas, mapeo
 - [x] **Fase 4** — EDA y baselines
 - [x] **Diseño del caso** — ML Canvas (`ML Canvas esquema.docx`, en la carpeta de la materia)
 - [x] **Fase 5** — Gold + modelo → `features/`, `training/`, `docs/FEATURES.md`
-- [ ] **Fase 6** — serving, monitoreo y retraining en la nube → `serving/`, `monitoring/`, `infra/`
+- [~] **Fase 6** — serving, monitoreo y retraining. **La lógica está escrita y corriendo en
+  local** (`serving/predict.py`, `monitoring/temporada_actual.py`); falta empaquetarla:
+  `serving/app.py` + `Dockerfile`, el backend GCS de `common/storage.py`, e `infra/`
 
-### Fase 5, en una tabla
+### Dónde está el trabajo, en una tabla
 
 | | |
 |---|---|
-| Tabla Gold | **1.520 filas × 181 columnas**, de las cuales **159 son features** |
+| Tabla Gold | **1.530 filas × 301 columnas**, de las cuales **279 son features** |
 | Diccionario | [`docs/FEATURES.md`](docs/FEATURES.md), **generado** desde `features/spec.py` |
+| Versión del feature set | `v2.3189c9d4.279` — **derivada de un hash** de la lista, no escrita a mano |
 | **Modelo elegido** | **XGBoost** (`xgb_gbt`), entrenado sin las fechas con xG falso |
-| Accuracy | **0,503** en holdout, **0,516** en walk-forward (baseline del canvas: 0,426) |
+| Accuracy | **0,500** en holdout (baseline del canvas: 0,426; mercado: 0,495). En walk-forward, 0,516 con el set de 159 |
 | Feature más importante | `dif_elo` — la diferencia de rating Elo entre los dos equipos |
 | Modelos comparados | 7 modelos × 3 variantes de datos, incluida una red neuronal |
+| Bloques de features medidos | copas/Europa (24) y Opta (56): **no aportan**, y está publicado |
 | GPU | **Se midió**: pierde 1,7× a 1.140 filas, gana **5,4×** a 114.000 |
-| Tests | Suite completa, con pruebas de fuego para cada hallazgo |
+| Ciclo cerrado | predicción registrada → resultado real → métricas, corriendo sobre 2026-27 |
+| Tests | **470**, con pruebas de fuego para cada hallazgo |
+
+> ⚠️ **Hay dos modelos y sólo uno reporta números.** El de **evaluación**
+> (`training.run --sin-holdout`) entrena hasta 2024-25 y se mide contra 2025-26: es el que
+> vale como evidencia. El de **producción** (`training.run`) entrena también con 2025-26, así
+> que su 0,616 sobre esa temporada **no es una mejora, es el modelo acordándose**. El
+> `metadata.json` lo declara con `metricas_son_de_generalizacion: false`.
 
 ### Para entender todo de una
 
 Abrí **[`notebooks/00_recorrido_completo.ipynb`](notebooks/00_recorrido_completo.ipynb)**:
 recorre el proyecto entero paso a paso, con los números a la vista.
+
+### Para verlo correr en GCP
+
+**[`notebooks/01_gcp_cloudshell.ipynb`](notebooks/01_gcp_cloudshell.ipynb)** — el lab en la
+nube: se clona el repo en Cloud Shell, se corre celda por celda, y cada paso deja un recurso
+visible en la consola. Llega hasta el **modelo entrenado y versionado en el bucket**, y
+**la última celda borra todo** para no dejar nada facturando. Usa `requirements-cloud.txt`
+(Cloud Shell no tiene Python 3.14). Los comandos por terminal están en
+[`gcp/runbook.md`](gcp/runbook.md).
 
 ### Lo que el modelo NO logra, dicho sin maquillar
 
@@ -273,7 +307,7 @@ recorre el proyecto entero paso a paso, con los números a la vista.
 ## Cómo arrancar desde cero
 
 Para un compañero que clona el repo por primera vez. **No hace falta ninguna credencial:**
-las tres fuentes de datos son públicas y sin autenticación.
+las cuatro fuentes de datos son públicas y sin autenticación.
 
 ```powershell
 git clone <url-del-repo> tp-premier-ml
@@ -282,11 +316,14 @@ cd tp-premier-ml
 .\scripts\setup_env.ps1        # crea el venv fuera de OneDrive e instala todo
                                # (en Linux/macOS: bash scripts/setup_env.sh)
 
-python -m ingestion.run        # ~27 MB de Bronze, tarda unos minutos
-python -m transform.silver     # las 4 tablas Silver
-python -m features.gold_tp     # Gold: 1.520 x 165
-pytest                         # la suite completa
-python -m training.run --todos # entrena y evalúa los tres modelos
+python -m ingestion.run              # ~27 MB de Bronze, tarda unos minutos
+python -m ingestion.bronze_pulselive # copas, Europa y las stats de Opta
+python -m transform.silver           # FPL + football-data
+python -m transform.competencias     # fact_match_comp
+python -m transform.opta_stats       # fact_opta_stats
+python -m features.gold_tp           # Gold: 1.530 x 301
+pytest                               # 470 tests
+python -m training.run --sin-holdout # entrena y evalúa (el numero que se reporta)
 ```
 
 **`data/` no está en el repo** y no debería estar: se regenera con los dos primeros

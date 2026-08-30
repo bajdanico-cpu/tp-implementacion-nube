@@ -49,20 +49,33 @@ exactamente lo que corre en producción.
 
 ```powershell
 .\\scripts\\setup_env.ps1        # crea el venv e instala todo
-python -m ingestion.run        # ~27 MB de Bronze, sin credenciales
-python -m transform.silver     # las 4 tablas Silver
-python -m features.gold_tp     # la tabla Gold
+python -m ingestion.run              # ~27 MB de Bronze, sin credenciales
+python -m ingestion.bronze_pulselive # copas, Europa y las stats de Opta
+python -m transform.silver           # las tablas de FPL y football-data
+python -m transform.competencias     # silver.fact_match_comp
+python -m transform.opta_stats       # silver.fact_opta_stats
+python -m features.gold_tp           # la tabla Gold
 ```
 
 **El resumen, para el apurado:**
 
 | | |
 |---|---|
+| Tabla Gold | **1.530 × 301**, de las cuales **279 son features** |
+| Fuentes | 4 — las tres públicas de siempre **más la API oficial de premierleague.com** |
 | Modelo elegido | **XGBoost** (`xgb_gbt`), entrenado sin las fechas con xG falso |
-| Accuracy en el holdout | **0,503** contra 0,426 del baseline |
+| Accuracy en el holdout | **0,500** contra 0,426 del baseline y 0,495 del mercado |
 | Accuracy en walk-forward | **0,516**, le gana a "siempre local" en el 60,5 % de las fechas |
 | Feature más importante | `dif_elo` — la diferencia de rating Elo entre los dos equipos |
+| Ciclo cerrado | predicción registrada → resultado real → métricas, ya corriendo sobre 2026-27 |
 | ¿Le gana al mercado? | **No.** Cuando discrepa de las casas, acierta menos que ellas |
+| Tests | **470**, en verde |
+
+> ⚠️ **Hay dos modelos y no son intercambiables.** El de *evaluación* entrena hasta
+> 2024-25 y se mide contra 2025-26: **es el único cuyos números valen como evidencia**. El
+> de *producción* entrena también con 2025-26 —380 partidos más, y los más recientes— así
+> que sus métricas sobre esa temporada ya no prueban nada. Todo lo que se reporta acá sale
+> del de evaluación. La sección 6 lo explica en detalle.
 """),
 
 md("""
@@ -90,7 +103,10 @@ from common.storage import read_table
 print("temporadas de entrenamiento:", CFG.seasons_for_training())
 print("temporada de validacion    :", CFG.valid_season)
 print("holdout (nunca se entrena) :", CFG.holdout_season)
+print("temporada EN CURSO         :", CFG.current_season, "(monitoreo, nunca entrena)")
 print("modelo de produccion       :", CFG.modelo, "|", CFG.datos_entrenamiento)
+print("el artefacto de produccion incluye el holdout:", CFG.incluir_holdout)
+print("   -> por eso TODO lo que se reporta abajo usa incluir_holdout=False")
 """),
 
 md("""
@@ -110,23 +126,43 @@ el único que refleja lo que se sabía al momento de predecir. Conservarlo es la
 auditable contra el leakage.
 """),
 code("""
-for nombre in ("dim_team", "fact_match", "fact_fixture", "fact_player_gw"):
+from common.storage import table_exists
+
+for nombre in ("dim_team", "fact_match", "fact_fixture", "fact_player_gw",
+               "fact_match_comp", "fact_opta_stats"):
+    if not table_exists(nombre):
+        print(f"{nombre:18s} (falta: python -m ingestion.bronze_pulselive)")
+        continue
     d = read_table(nombre)
     print(f"{nombre:18s} {len(d):>7,} filas x {d.shape[1]:>3} columnas")
 """),
 
 md("""
-### Las tres fuentes, y por qué las tres
+### Las cuatro fuentes, y por qué las cuatro
 
 | Fuente | Grano | Qué aporta que nadie más aporta |
 |---|---|---|
 | **football-data.co.uk** | partido | cuotas de cierre (el baseline duro), tiros, córners, tarjetas |
 | **vaastav/Fantasy-Premier-League** | jugador × fecha | el histórico jugador-fecha con xG. La API oficial no lo sirve |
 | **API oficial de FPL** | presente y futuro | fixtures, deadlines, y el resultado apenas termina el partido |
+| **API de premierleague.com** *(nueva)* | partido, todas las competencias | copas y Europa —lo único que veía el pipeline era la Premier— y ~180 estadísticas de Opta por equipo y partido |
 
 La API de FPL **no sirve el detalle fecha a fecha del pasado**: `history` da sólo la
 temporada actual y `history_past` una fila por temporada, y sólo de jugadores que hoy están
 en la base (sesgo de supervivencia). Por eso vaastav no es reemplazable.
+
+La cuarta es `footballapi.pulselive.com`, la que consume el sitio oficial: **pública,
+gratuita, sin clave y sin cuota**, con 22 a 35 temporadas de histórico. Cierra el agujero
+que el proyecto arrastraba —el calendario de copas y Europa— y trae de yapa las
+estadísticas de Opta. Lo único que pide es la cabecera `Origin: https://www.premierleague.com`.
+
+```python
+B = "https://footballapi.pulselive.com/football"
+# comps: 1=Premier  2=Champions  3=Europa  4=FA Cup  5=EFL Cup
+GET {B}/competitions/5/compseasons?pageSize=100   # ids de temporada
+GET {B}/fixtures?comps=5&compSeasons=812&pageSize=400
+GET {B}/stats/match/125161                        # ~180 stats por equipo
+```
 """),
 
 md("""
@@ -198,9 +234,14 @@ md("""
 ---
 ## 3 · Las features
 
-**159 columnas**, todas del equipo y mirando hacia atrás. El diccionario completo, campo
+**279 columnas**, todas del equipo y mirando hacia atrás. El diccionario completo, campo
 por campo con su fórmula, está en [`docs/FEATURES.md`](../docs/FEATURES.md) — y se
 **genera** desde `features/spec.py`, con un test que falla si queda desfasado.
+
+La versión del set **se deriva de un hash de la lista de features** (`v2.3189c9d4.279`), no
+se escribe a mano. Existe por un error real: durante días la etiqueta quedó pegada en `"v2"`
+mientras el set pasaba por 159, 164, 171, 175, 184 y 192 columnas — seis modelos distintos
+guardados con la misma versión, justo lo que una versión tiene que evitar.
 """),
 code("""
 from features import spec
@@ -271,7 +312,127 @@ display(elos.tail(3)[["equipo", "elo"]].round(0))
 
 md("""
 ---
-## 4 · Los hallazgos de datos que cambiaron el diseño
+## 4 · Copas, Europa y Opta: dos bloques medidos, y la respuesta que no queríamos
+
+Hasta acá el pipeline **sólo veía partidos de Premier**. Un equipo que sigue en semifinales
+de Champions y en la Copa de la Liga juega mucho más de lo que registran las ventanas de
+fatiga, y el modelo no tenía forma de enterarse. La hipótesis era razonable **y el dato
+faltaba de verdad**: las ventanas de 7, 14 y 21 días ya estaban construidas y no aportaban
+nada, justamente porque sólo contaban partidos de Premier.
+
+La API oficial de premierleague.com lo resolvió de una: las cinco competencias con el mismo
+grano equipo-partido, y de yapa las estadísticas de Opta.
+"""),
+code("""
+comp = read_table("fact_match_comp")
+print("partidos-equipo por temporada y competencia (equipos de Premier):\\n")
+display(pd.crosstab(comp.season, comp.competencia))
+# La tabla cuenta partidos-EQUIPO: un partido de copa entre dos equipos de Premier
+# aporta dos filas, y uno contra un rival de otra division, una sola.
+ult_temp = comp[comp.season == "2025-26"]
+de_premier = set(ult_temp[ult_temp.es_premier].team_short)
+fuera = ult_temp[~ult_temp.es_premier]
+n_pl = int(fuera.team_short.isin(de_premier).sum())
+print(f"\\n-> lo que el pipeline NO veia en 2025-26: {n_pl} partidos-equipo de copa "
+      "y Europa")
+print("   jugados por los 20 de Premier, concentrados en los que llegan lejos.")
+print(f"   Y {len(fuera) - n_pl} mas de equipos del ascenso: son los que pueden subir el "
+      "anio siguiente,")
+print("   y hoy llegan a la Premier sin ninguna historia (el cold-start de la seccion 14).")
+print("   2026-27 recien arranca: solo tiene la primera ronda de la EFL Cup.")
+"""),
+code("""
+# Cobertura real: no es un dato de borde que toque a cuatro partidos.
+h_cob = gold[gold.season == CFG.holdout_season]
+cob = pd.Series({
+    "algun equipo jugo entre semana (7d)":
+        ((h_cob.local_partidos_todo_7d > 1) | (h_cob.visita_partidos_todo_7d > 1)).mean(),
+    "hubo copa en los ultimos 14 dias":
+        ((h_cob.local_partidos_copa_14d > 0) | (h_cob.visita_partidos_copa_14d > 0)).mean(),
+    "algun equipo juega en Europa":
+        ((h_cob.local_europa_acumuladas > 0) | (h_cob.visita_europa_acumuladas > 0)).mean(),
+})
+print("sobre los 380 partidos del holdout 2025-26:\\n")
+print(cob.map(lambda v: f"{v:.1%}").to_string())
+"""),
+
+md("""
+### Lo que trae Opta, y las tres que quedaron afuera a propósito
+
+`/stats/match/{id}` devuelve ~180 estadísticas por equipo y partido. Se ruedan **14** en dos
+ventanas y por los dos lados = **56 features**. Cubren tres huecos que ninguna otra fuente
+del proyecto llenaba:
+
+| Hueco | Columnas | Por qué importa |
+|---|---|---|
+| **Ubicación del remate** | `tiros_area`, `tiros_fuera` y sus proporciones | es el proxy de calidad del xG que se había dado por inalcanzable sin Understat: el xG agregado de FPL no distingue "2,0 en tres ocasiones claras" de "2,0 en veinte remates de lejos" |
+| **Defensa como acción** | `quites`, `intercepciones`, `rechazos`, `bloqueos` | hasta ahora la defensa se medía sólo por lo que el rival lograba |
+| **Dominio territorial** | `posesion`, `toques_area_rival` | sin equivalente previo |
+
+**Tres estadísticas se descartaron antes de construir nada**, porque la cobertura por
+temporada las delata:
+
+```
+conducciones_prog     0 % en 2022-24, 41 % en 2025-26, 100 % en 2026-27
+recuperaciones        0 % salvo la temporada actual
+atajadas_clarisimas   6 % global
+```
+
+Es exactamente la trampa del xG hardcodeado en cero de 2022-23 (sección 5): **una feature
+que sólo existe en las temporadas recientes le enseña al modelo a reconocer la temporada,
+no el fútbol.**
+"""),
+
+md("""
+### La medición, que es el verdadero resultado
+
+`python -m training.ablacion` corre los cuatro sets con el mismo protocolo —modelo de
+evaluación, holdout 2025-26— y escribe la tabla.
+"""),
+code("""
+abl = RAIZ / "training" / "output" / "ablacion_bloques.csv"
+if abl.exists():
+    display(pd.read_csv(abl).round(4))
+else:
+    print("Falta la corrida. Ejecutar: python -m training.ablacion")
+"""),
+
+md("""
+```
+                set   n   accuracy   IC 95 %          f1 macro   log-loss
+               base  199    0,4974   0,447 - 0,547      0,3911     1,0258
+base + competencias  223    0,5000   0,450 - 0,550      0,3928     1,0262
+        base + Opta  255    0,5026   0,453 - 0,553      0,4089     1,0334
+               todo  279    0,5000   0,450 - 0,550      0,3928     1,0290
+```
+
+**Ningún bloque aporta.** La diferencia entre el mejor y el peor set es de **0,005** —cinco
+milésimas— contra un error estándar de ±0,025. Los cuatro son el mismo número.
+
+Las 80 features **se usan igual**: todas tienen ganancia mayor que cero y entre las dos
+familias explican el 26 % de la ganancia total del modelo (sección 8). Es decir: el modelo
+las mira, pero mirarlas no lo hace acertar más.
+
+**Por qué se conservan.** Porque el costo es cero, porque son el único camino a las stats de
+Opta si más adelante hay más filas, y sobre todo porque **el resultado nulo es evidencia**.
+La hipótesis de la fatiga era buena y el dato faltaba de verdad; que el efecto no aparezca
+tiene explicaciones plausibles y medibles —los técnicos rotan para compensar, o la señal
+existe pero es chica frente al piso de ruido de 1.004 filas de entrenamiento, o ya estaba
+capturada por `dias_descanso` y el Elo—. Lo que no es defendible es no haberlo medido.
+
+### Lo que NO se construyó, a propósito
+
+Ninguna feature mira el **calendario futuro** de copas. El calendario se publica ronda por
+ronda: al 25/08/2026 la EFL Cup tenía sus 60 fixtures de primera ronda con **dos días** de
+anticipación, contra los 278 de la Premier. Una feature del tipo *"juega copa la semana que
+viene"* estaría siempre completa en entrenamiento y faltaría en producción entre el fin de
+una ronda y el sorteo de la siguiente. Peor: **no se puede ni simular el hueco**, porque la
+API no expone cuándo se publicó cada fixture.
+"""),
+
+md("""
+---
+## 5 · Los hallazgos de datos que cambiaron el diseño
 
 Cinco cosas que aparecieron midiendo, no suponiendo. Cada una tiene su test.
 """),
@@ -312,7 +473,7 @@ print("   plantel daba 9,4% en vez del 61,3% real.")
 
 md("""
 ---
-## 5 · El modelo
+## 6 · El modelo
 
 Split **temporal, nunca aleatorio**: un split aleatorio pone partidos de mayo en el train y
 de agosto en el test, el modelo ve el futuro y la métrica miente.
@@ -356,6 +517,46 @@ for k, v in rep["baselines"].items():
 """),
 
 md("""
+### Dos modelos, y sólo uno de los dos puede reportar números
+
+Esta es la distinción más fácil de arruinar de todo el trabajo, y la que más caro sale.
+
+| | Modelo de **evaluación** | Modelo de **producción** |
+|---|---|---|
+| Entrena con | 2022-23 → 2024-25 (1.004 filas) | + 2025-26 (1.384 filas) |
+| Se mide contra | 2025-26, que nunca vio | 2025-26, **que sí vio** |
+| Accuracy sobre esa temporada | **0,500** | 0,616 |
+| Para qué sirve | **es el número que se reporta** | es el `.ubj` que predice la fecha que viene |
+| Comando | `python -m training.run --sin-holdout` | `python -m training.run` |
+
+Ese **0,616 no es una mejora, es el modelo acordándose**. Aparece en el `metrics.json` del
+artefacto de producción y por eso el `metadata.json` guarda la bandera
+`metricas_son_de_generalizacion: false` — para que nadie lo cite por error dentro de seis
+meses. El CLI además tira un warning en cada corrida de producción.
+
+Por qué existen los dos: el modelo que sale a predecir la fecha que viene **debería** usar
+los 380 partidos más recientes, que son los más informativos. Pero entonces se queda sin
+ninguna temporada limpia contra la cual medirse. La salida es tener los dos artefactos, con
+la regla explícita de cuál habla.
+
+**Y la temporada en curso (2026-27) no entra a entrenar en ninguno de los dos**, ni siquiera
+en el de producción: sus partidos jugados sirven de historia para las fechas siguientes,
+pero usarlos como objetivo dejaría al proyecto sin evaluación limpia en vivo. Hay tests que
+lo verifican.
+"""),
+code("""
+# La demostracion, en una corrida: el MISMO modelo, la MISMA temporada de test.
+rep_prod = evaluate.evaluar_holdout(CFG.modelo, info, gold=gold,
+                                    incluir_holdout=True)["reporte"]
+print(f"{'':22s} {'n_train':>8s} {'accuracy':>9s}  metricas_de_generalizacion")
+for etq, r in (("evaluacion", rep), ("produccion", rep_prod)):
+    print(f"  {etq:20s} {r['n_train']:>8d} {r['accuracy']:>9.4f}  "
+          f"{r['metricas_son_de_generalizacion']}")
+print()
+print("-> +11,6 puntos de accuracy que NO existen. Es el holdout entrando al train.")
+"""),
+
+md("""
 ### El intervalo de confianza no es decorativo
 
 Con 380 partidos el error estándar de la accuracy ronda **±5 puntos**. Diferencias chicas
@@ -365,7 +566,7 @@ Por eso toda métrica va con su intervalo.
 
 md("""
 ---
-## 6 · El empate: la pregunta que más discutimos
+## 7 · El empate: la pregunta que más discutimos
 
 La objeción natural al ver la matriz de confusión es *"si casi no predice empates, no
 sirve"*. Los datos dicen lo contrario.
@@ -421,9 +622,10 @@ umbral de apuesta son 5 puntos.
 
 md("""
 ---
-## 7 · Qué features pesan
+## 8 · Qué features pesan
 
-142 de 159 tienen ganancia mayor que cero: casi nada es peso muerto.
+278 de 279 tienen ganancia mayor que cero: casi nada es peso muerto. Lo interesante es
+**cuánto** pesa cada familia, no cuántas hay.
 """),
 code("""
 from training.run import _importancias
@@ -431,15 +633,30 @@ from training.run import _importancias
 imp = _importancias(res["modelos"], res["features"])
 display(imp.head(12).round(2))
 
+print(f"\\nfeatures con ganancia > 0: {(imp.ganancia > 0).sum()} de {len(spec.FEATURES)}")
+
 imp["ventana"] = imp.feature.str.extract(r"_(u3|u5_temp|cond_u5|u5|camp)$")[0]
 peso = (imp.groupby("ventana").ganancia.sum() / imp.ganancia.sum()).sort_values(ascending=False)
 print("\\nEl 'periodo de tiempo a definir' del canvas, respondido con numeros:")
 print(peso.round(3).to_string())
 """),
 
+code("""
+# El peso por FAMILIA de features: es donde se lee el veredicto de la seccion 4.
+de_grupo = {f.nombre: g for g, fs in spec.grupos().items() for f in fs}
+imp["familia"] = imp.feature.map(de_grupo)
+share = (imp.groupby("familia").ganancia.sum() / imp.ganancia.sum()).sort_values(ascending=False)
+print("share de la ganancia total, por familia:\\n")
+print(share.map(lambda v: f"{v:6.1%}").to_string())
+print()
+print("-> Opta es la SEGUNDA familia en peso (20%) y competencias suma otro 6%:")
+print("   el modelo las mira mucho. Y sin embargo la accuracy no se mueve.")
+print("   Peso en el arbol no es lo mismo que poder predictivo.")
+"""),
+
 md("""
 ---
-## 8 · Dónde le gana el modelo a cada vara
+## 9 · Dónde le gana el modelo a cada vara
 
 Un promedio global no dice si el modelo sirve. Lo que importa es **en qué situaciones**
 gana, porque si se pueden identificar de antemano, se apuesta sólo ahí.
@@ -468,7 +685,7 @@ print("la conclusion honesta es que el sistema todavia NO la sostiene.")
 
 md("""
 ---
-## 9 · La simulación de apuestas
+## 10 · La simulación de apuestas
 
 Es el bloque 6 del canvas, y **el único lugar donde entran las cuotas**. No son features del
 modelo, y la razón es estructural:
@@ -509,7 +726,7 @@ distinguir +3 % de cero. **No hay ninguna estrategia rentable demostrada.** El o
 
 md("""
 ---
-## 10 · Walk-forward: la simulación del ciclo operativo
+## 11 · Walk-forward: la simulación del ciclo operativo
 
 Para cada una de las 38 fechas se reentrena con **todo lo anterior al corte** y se predice
 esa fecha. No es sólo validación: es el ciclo del bloque 9 corriendo de verdad.
@@ -565,7 +782,7 @@ print(f"  motivo: {d2.motivo}")
 
 md("""
 ---
-## 11 · GPU: la hipótesis se cayó
+## 12 · GPU: la hipótesis se cayó
 
 Antes de medir dejamos escrita esta predicción:
 
@@ -600,22 +817,35 @@ Para reproducirlo: `python -m training.benchmark_gpu`
 
 md("""
 ---
-## 12 · Por qué éste es el modelo elegido
+## 13 · Por qué éste es el modelo elegido
 
 Se corrió la grilla entera —**7 modelos × 3 variantes de datos**— con
 `python -m training.compare_models`, y después el walk-forward de los finalistas.
+
+> ⚠️ **La grilla es de la época del set de 159 features.** Las 120 que se agregaron después
+> (h2h, momentum de Elo, competencias, Opta) no la movieron —eso es lo que mide la sección
+> 4— así que la elección de modelo sigue en pie, pero los números de abajo son de ese
+> momento. Para rehacerla con el set actual: `python -m training.compare_models`.
 """),
 code("""
-comp = pd.read_csv(RAIZ / "training" / "output" / "comparacion_completa.csv")
-print("=== ACCURACY por modelo y variante de datos (mercado 0,4947) ===")
-display(comp.pivot(index="modelo", columns="datos", values="accuracy")
-            .loc[["xgb_gbt","xgb_rf","hgb","logreg","poisson","ordinal","mlp"],
-                 ["todo","sin_xg_falso","sin_2022_23"]].round(4))
+# training/output/ esta en .gitignore: en un clon fresco hay que correr la grilla.
+ruta_grilla = RAIZ / "training" / "output" / "comparacion_completa.csv"
+if ruta_grilla.exists():
+    grilla = pd.read_csv(ruta_grilla)
+    print("=== ACCURACY por modelo y variante de datos (mercado 0,4947) ===")
+    display(grilla.pivot(index="modelo", columns="datos", values="accuracy")
+                  .loc[["xgb_gbt","xgb_rf","hgb","logreg","poisson","ordinal","mlp"],
+                       ["todo","sin_xg_falso","sin_2022_23"]].round(4))
+else:
+    print("Falta la corrida. Ejecutar: python -m training.compare_models")
 """),
 code("""
-wfc = pd.read_csv(RAIZ / "training" / "output" / "walkforward_candidatos.csv")
-print("=== WALK-FORWARD de los finalistas, 38 fechas ===")
-display(wfc.round(4))
+ruta_wfc = RAIZ / "training" / "output" / "walkforward_candidatos.csv"
+if ruta_wfc.exists():
+    print("=== WALK-FORWARD de los finalistas, 38 fechas ===")
+    display(pd.read_csv(ruta_wfc).round(4))
+else:
+    print("Falta la corrida. Ejecutar: python -m training.compare_models")
 """),
 
 md("""
@@ -635,37 +865,231 @@ ruido a esta escala— y pierde 2,3 puntos de accuracy y 7 de F1 macro.
 
 **La red neuronal quedó de las peores** (0,426, apenas por encima del baseline trivial). Con
 1.140 filas y 159 features es el caso de manual donde una red sobreajusta. Ya no es
-intuición: está medido.
+intuición: está medido. Con 279 features la relación filas/columnas es todavía peor.
 """),
 
 md("""
 ---
-## 13 · Qué falta: la fase de nube
+## 14 · La predicción en producción: el ciclo cerrado, ya corriendo
 
-Lo que está listo para el deploy:
+Acá empieza la Fase 6. Todavía no hay HTTP ni contenedor, pero **la lógica que va adentro
+del endpoint ya está escrita, probada y corriendo**: `serving/predict.py`.
 
-- **`data/gold/gold_tp_match.parquet`** — la tabla de features, reproducible con un comando.
-- **`models/xgb_gbt/<version>/model.ubj`** — el modelo serializado en formato portable.
-- **`metadata.json`** — el contrato con el serving: `feature_names` **ordenado** (si el
-  serving arma las columnas en otro orden, XGBoost no se queja y devuelve basura),
-  `classes_`, hiperparámetros, el prior de ascendidos congelado, versiones de librerías,
-  `git_sha` y el hash de Gold.
-- **`common/storage.py`** — la capa de I/O con backend intercambiable. Migrar a GCS es
-  implementar seis métodos y cambiar una línea de `config.yaml`; la lógica de negocio no se
-  toca.
-- **`training/promotion.py`** — la regla de promoción, con el registro de intentos
-  rechazados.
+```powershell
+python -m serving.predict --gw 3              # la fecha que viene
+python -m serving.predict --gw 1 --evaluar    # una ya jugada, contra el resultado real
+```
 
-Lo que falta escribir:
+Cumple las tres cosas que una predicción de producción tiene que cumplir, y ninguna es
+decorativa:
 
-| Carpeta | Qué va |
+| | Qué garantiza | Qué pasa si falta |
+|---|---|---|
+| **Mismo código de features que el entrenamiento** — `features.gold_tp.construir(objetivos=...)` es literalmente la misma función | no hay train/serve skew | dos implementaciones paralelas de la misma feature divergen en silencio, y es el bug más caro de MLOps |
+| **El orden de las columnas se valida contra el `metadata.json`** | XGBoost recibe un `ndarray`: si las columnas vienen en otro orden **no se queja** y predice cualquier cosa | fallo silencioso, sin excepción y sin log |
+| **Cada predicción se registra** con `fixture_id`, momento, versión de modelo y de feature set, y las tres probabilidades | hay con qué monitorear después | un endpoint que responde, y nada más |
+
+Y corre el **mismo assert anti-leakage** que Gold: `hist_kickoff` tiene que ser anterior al
+corte también en producción.
+"""),
+code("""
+from serving import predict as srv
+
+registradas = sorted((RAIZ / "data" / "predicciones").glob("*.parquet"))
+print(f"predicciones registradas hasta ahora: {len(registradas)}")
+for r in registradas[-3:]:
+    print("  ", r.name)
+
+ult = pd.read_parquet(registradas[-1])
+print()
+display(ult[["home_short", "away_short", "p_home", "p_draw", "p_away",
+             "prediccion", "confianza", "model_version"]].round(3))
+"""),
+code("""
+# El cierre del ciclo: la fecha 1 de 2026-27, contra lo que efectivamente paso.
+pred1 = srv.predecir(CFG.current_season, 1)
+ev = srv.evaluar(pred1)
+
+if "nota" in ev:
+    print(ev["nota"])
+else:
+    d = ev["detalle"]
+    print(f"{'partido':16s}{'predijo':9s}{'p':>7s}   {'real':7s}{'marcador':10s}ok")
+    for r in d.itertuples():
+        marcador = f"{int(r.home_goals)}-{int(r.away_goals)}"
+        ok = "OK" if r.prediccion == r.target_1x2 else "--"
+        print(f"{r.home_short}-{r.away_short:12s}{r.prediccion:9s}{r.confianza:7.3f}   "
+              f"{r.target_1x2:7s}{marcador:10s}{ok}")
+    print()
+    print(f"  accuracy   {ev['accuracy']:.3f}")
+    print(f"  log-loss   {ev['log_loss']:.4f}")
+    print(f"  'siempre local' habria acertado: {ev['acierta_siempre_local']:.3f}")
+"""),
+
+md("""
+**Los dos errores más caros fueron los ascendidos ganando de local** (HUL–MUN, IPS–SUN): es
+el *cold-start* en vivo, la situación donde el modelo tiene menos historia y más se
+equivoca. El prior de ascendidos existe justamente para eso, y en la fecha 1 no alcanzó.
+
+**Y "siempre al local" acertó 7 de 10 contra nuestros 4.** Antes de sacar conclusiones: fue
+una fecha con 7 locales de 10 contra el 44,5 % histórico, y con n=10 el intervalo de la
+accuracy va de 0,10 a 0,70. Diez partidos no distinguen nada de nada — que es exactamente
+el argumento de la regla de promoción de la sección 11.
+"""),
+
+md("""
+---
+## 15 · El monitoreo de la temporada en curso
+
+El holdout 2025-26 es una foto: 380 partidos fijos que ya se midieron muchas veces y contra
+los que se tomaron decisiones. La temporada en curso es otra cosa — **datos que el modelo no
+vio y que nadie miró todavía**, que llegan de a diez por semana. Es la evaluación más
+honesta que existe, y **la única que no se puede sobreajustar mirándola**.
+
+```powershell
+python -m monitoring.temporada_actual
+```
+
+Dos decisiones de diseño que importan:
+
+1. **Los baselines se calculan sobre las mismas filas**, fecha a fecha. La distinción es
+   sutil y decisiva: una caída del modelo *acompañada* de una caída del mercado es la liga
+   siendo más impredecible, no el modelo degradándose. Sin el baseline pareado, esa
+   diferencia no se ve y se dispara un retraining que no hacía falta.
+2. **2026-27 no entra al entrenamiento** ni siquiera en el artefacto de producción. Sus
+   partidos jugados sirven de historia para las fechas siguientes; usarlos como objetivo
+   dejaría al proyecto sin ninguna evaluación limpia. Hay un test que lo verifica.
+"""),
+code("""
+from monitoring import temporada_actual as mon
+
+mon_df = mon.correr()
+display(mon_df.round(4))
+
+res_mon = mon.resumen(mon_df)
+print()
+for k, v in res_mon.items():
+    print(f"  {k:28s} {v:.4f}" if isinstance(v, float) else f"  {k:28s} {v}")
+"""),
+
+md("""
+**Lo que hay que saber leer en esa tabla: todavía no dice nada.** Con una fecha jugada el
+intervalo de confianza de la accuracy es de ±30 puntos. El monitoreo no está para dar un
+veredicto hoy — está para que dentro de diez fechas exista la serie pareada que alimenta el
+McNemar de la regla de promoción, y para que la degradación se detecte cuando sea real y no
+cuando sea ruido.
+
+Es, literalmente, el bloque 10 del canvas corriendo.
+"""),
+
+md("""
+---
+## 16 · Reproducibilidad: qué hace falta para volver a armar un modelo
+
+```powershell
+python -m training.reproducir                        # el inventario completo
+python -m training.reproducir --version 20260825T024144Z
+```
+
+Este módulo existe por un error concreto. Durante varios días `FEATURE_SET_VERSION` se
+mantuvo **a mano** y quedó pegada en `"v2"` mientras el set pasaba por 159, 164, 171, 175,
+184 y 192 columnas: **seis modelos distintos guardados con la misma etiqueta**, justo lo que
+una versión tiene que evitar. Ahora se deriva de un hash de la lista de features
+(`v2.3189c9d4.279`) y no puede volver a desincronizarse.
+
+Lo que salvó a los modelos viejos es que el `metadata.json` guarda dos cosas que sí son
+fiables: el **`git_sha`** del código con el que se entrenó y la **lista ordenada completa de
+`feature_names`**. Con eso alcanza para reproducir, aunque la etiqueta mienta.
+"""),
+code("""
+from training import reproducir
+
+inv = pd.DataFrame(reproducir.inventario())
+display(inv)
+print("Donde 'declarado' difiere de 'feature set real', la etiqueta mentia.")
+"""),
+
+md("""
+### Hay dos cosas distintas que se llaman "reproducir"
+
+| | Qué necesita | Dónde se usa |
+|---|---|---|
+| **Volver a usarlo** — cargar el `.ubj` y predecir | el modelo y su lista de features, nada más | `serving/predict.py`. **Es lo que se sube a la nube** |
+| **Volver a entrenarlo** — reconstruir el artefacto desde cero | `git checkout <sha>`, la misma Silver, las versiones pineadas y **el mismo device** | sólo si hace falta auditarlo |
+
+### El hallazgo que decide la arquitectura de la nube: GPU ≠ CPU
+
+Medido sobre las mismas 1.384 filas, misma semilla, mismas rondas:
+
+| | ¿Bit a bit? | Diferencia máxima en probabilidad |
+|---|---|---|
+| Mismo device, misma semilla | **sí** | 0 |
+| GPU vs CPU | **no** | **7,9 × 10⁻²** |
+
+**18 de 380 predicciones cambian de resultado.** El algoritmo `hist` de GPU no es
+bit-idéntico al de CPU: distinto orden de reducción en punto flotante. Se ve incluso en el
+early stopping, que con el set actual para en la ronda 111 en GPU y en la 102 en CPU
+(`python -m training.run --sin-holdout --device cpu` para comprobarlo).
+
+La consecuencia práctica es una sola línea: **se sube el `.ubj` entrenado en local, no se
+reentrena en el nodo.** El formato nativo de XGBoost es portable CPU↔GPU **para inferencia**
+y sobrevive upgrades de librería — un modelo entrenado en GPU carga y predice en CPU sin
+tocar nada, y hay un test que lo demuestra
+(`test_modelo_entrenado_en_gpu_predice_igual_en_cpu`).
+
+Si igual se quisiera reentrenar en la nube, es reproducible siempre que el nodo use el mismo
+device, las versiones pineadas de `requirements.txt` y el mismo `gold_tp_match.parquet`
+—cuyo hash está en el `metadata.json`—.
+"""),
+
+md("""
+---
+## 17 · Qué falta: la fase de nube
+
+Todo lo anterior corre **en local, sin una sola credencial**. Lo que queda es empaquetarlo.
+
+### Lo que ya está listo para el deploy
+
+| | Qué es |
 |---|---|
-| `serving/` | `app.py` (FastAPI) y `Dockerfile`. El endpoint carga el `.ubj`, valida el orden de features contra el metadata y devuelve las tres probabilidades |
-| `monitoring/` | recolección del resultado real y métricas rodantes contra los baselines del mismo período |
-| `infra/` | Cloud Run + Cloud Scheduler (dos disparos por semana), Artifact Registry, y el bucket de GCS |
+| `data/gold/gold_tp_match.parquet` | la tabla de features, reproducible con un comando |
+| `models/xgb_gbt/<version>/*.ubj` | cinco modelos (uno por semilla) en formato portable CPU↔GPU |
+| `metadata.json` | **el contrato con el serving**: `feature_names` *ordenado*, `classes_`, hiperparámetros, el prior de ascendidos congelado, versiones de librerías, `git_sha` y el hash de Gold |
+| `serving/predict.py` | la lógica del endpoint, entera y probada: carga, valida el orden, predice, registra |
+| `monitoring/temporada_actual.py` | la evaluación en vivo contra los baselines pareados |
+| `training/promotion.py` | la regla de promoción, con el registro de intentos rechazados |
+| `common/storage.py` | la capa de I/O con backend intercambiable |
 
-**Decisión de arquitectura ya tomada con números:** el Job de entrenamiento **sin GPU**. A
-1.140 filas no se paga, y está medido dónde empezaría a pagarse.
+### Lo que falta escribir
+
+| Dónde | Qué va | Tamaño real |
+|---|---|---|
+| `serving/app.py` + `Dockerfile` | envolver `predict.py` en FastAPI. **La lógica no se toca**: es un `POST /predict` que llama a la función que ya existe | chico |
+| `common/storage.py` | el backend GCS, hoy declarado como stub: seis métodos y una línea de `config.yaml` | chico |
+| `infra/` | Cloud Run + Cloud Scheduler (dos disparos por semana), Artifact Registry y el bucket de GCS | es el grueso |
+
+### La forma que tiene el deploy, con las decisiones ya tomadas
+
+```
+Cloud Scheduler ──> Cloud Run Job   (ingesta + Silver + Gold)   martes
+       │
+       └─────────> Cloud Run Job   (predicción de la fecha)     antes del deadline
+                          │
+                   GCS bucket:  bronze/ silver/ gold/ models/ predicciones/
+                          │
+                   Cloud Run Service (FastAPI)  ──>  POST /predict
+                          │
+                   Cloud Run Job   (monitoreo)                  lunes
+```
+
+Tres decisiones que **no** quedan para el momento del deploy, porque ya están medidas:
+
+1. **El Job de entrenamiento va sin GPU.** A 1.140 filas la GPU pierde 1,7×, y recién arriba
+   de ~50.000 filas se paga el 2,5-3× que cuesta una T4 (sección 12).
+2. **El modelo se sube entrenado, no se reentrena en el nodo.** GPU y CPU no dan el mismo
+   modelo: 18 de 380 predicciones cambian (sección 16).
+3. **El disparo va atado al `deadline_time` de FPL, no a un día fijo.** El margen medido
+   entre el último dato disponible y el corte es de 22,5 horas.
 """),
 code("""
 import json
@@ -695,26 +1119,31 @@ md("""
 
 **Lo que funciona:**
 
-- Pipeline completo Bronze → Silver → Gold → modelo, reproducible con cinco comandos y sin
-  ninguna credencial.
+- Pipeline completo Bronze → Silver → Gold → modelo, reproducible con un puñado de comandos
+  y **sin ninguna credencial**: las cuatro fuentes son públicas y abiertas.
 - Control anti-leakage que **corre antes de escribir**, con prueba de fuego para cada
-  hallazgo. Margen medido contra el deadline de FPL: 22,5 horas.
-- El modelo le gana al baseline del canvas (0,503 contra 0,426) y **empata la accuracy del
-  mercado sin usar cuotas**.
+  hallazgo, y que se ejecuta también en producción. Margen medido contra el deadline de
+  FPL: 22,5 horas. 470 tests en verde.
+- El modelo le gana al baseline del canvas (0,500 contra 0,426) y **empata la accuracy del
+  mercado sin usar cuotas** (0,495).
+- **El ciclo cerrado ya corre**: se predice la fecha, se registra la predicción con su
+  trazabilidad completa, llega el resultado real y se calculan las métricas contra los
+  baselines de las mismas filas.
 - Todas las decisiones tomadas con medición: el feature set, la variante de datos, el
-  modelo, y la decisión de no usar GPU en la nube.
+  modelo, los dos bloques de features que no aportaron, y la decisión de no usar GPU en la
+  nube.
 
 **Lo que no funciona, dicho sin maquillar:**
 
 - **El modelo no le gana al mercado.** Cuando discrepa de las casas, acierta 0,346 contra
-  0,365. No tiene ventaja informativa.
+  0,365. No tiene ventaja informativa, y las 120 features nuevas no se la dieron.
 - **Ninguna estrategia de apuestas resultó rentable.** Todos los ROI son negativos, y el
   único positivo que apareció quedó dentro del error estándar.
 - Para la propuesta de valor del bloque 1 —un emprendimiento que gane con apuestas— **el
   sistema todavía no la sostiene**. Lo que sí sostiene es el ciclo de MLOps completo, que
   es donde está el peso de la nota.
 
-**Tres cosas que aprendimos midiendo, y que no se ven en el resultado final:**
+**Cinco cosas que aprendimos midiendo, y que no se ven en el resultado final:**
 
 1. El empate no es una falla del modelo: ni el mercado ni un Poisson bivariado lo ponen
    nunca como resultado más probable. Es una propiedad del fútbol.
@@ -722,6 +1151,13 @@ md("""
    que con 184. El límite es cuánta señal hay en 1.140 partidos.
 3. Menos datos pueden ser mejores: sacar las fechas con xG falso mejora 5 de 7 modelos,
    porque esas filas enseñan un artefacto del calendario de publicación de FPL.
+4. **Más features tampoco mejoran.** El set pasó de 159 a 279 columnas con dos bloques
+   construidos sobre hipótesis razonables —fatiga de copas, ubicación del remate—, el
+   modelo les da el 26 % de su ganancia, y la accuracy no se movió ni medio punto. El
+   resultado nulo, medido y publicado, vale tanto como uno positivo.
+5. **Hay que decir cuál de los dos modelos habla.** El artefacto de producción entrena con
+   el holdout y sobre esa temporada marca 0,616; el de evaluación marca 0,500. Reportar el
+   primero sería el error más caro y más fácil de cometer del trabajo entero.
 """),
 ]
 
