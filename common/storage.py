@@ -169,6 +169,39 @@ def latest_snapshot(source: str, season: str, dataset: str) -> Path | None:
     return snapshots[-1] if snapshots else None
 
 
+def snapshot_stamp(snapshot: Path) -> str:
+    """El `stamp` de una carpeta `ingested_at=<stamp>`."""
+    return snapshot.name.removeprefix("ingested_at=")
+
+
+def snapshot_at_or_before(source: str, season: str, dataset: str,
+                          stamp: str) -> Path | None:
+    """El snapshot más reciente que NO sea posterior a `stamp`.
+
+    Existe porque Bronze es append-only y fechado, y eso sólo sirve si algo lo
+    aprovecha. El caso concreto: el `bootstrap` dice a qué club pertenece cada
+    jugador **hoy**. Para atribuir las estadísticas de la fecha 1 hay que leer el
+    bootstrap de *ese momento*, no el de ahora: si un jugador se transfirió después,
+    el último bootstrap le adjudicaría sus goles al club nuevo.
+
+    Los stamps son UTC en formato `YYYYMMDDTHHMMSSZ`, así que el orden lexicográfico
+    es el cronológico.
+    """
+    root = CFG.bronze_dataset_root(source, season, dataset)
+    previos = [d for d in BACKEND.list_dirs(root) if snapshot_stamp(d) <= stamp]
+    return previos[-1] if previos else None
+
+
+def read_raw_at(source: str, season: str, dataset: str, filename: str,
+                stamp: str) -> bytes | None:
+    """Como `read_raw`, pero del snapshot vigente al momento `stamp`."""
+    snap = snapshot_at_or_before(source, season, dataset, stamp)
+    if snap is None:
+        return None
+    path = snap / filename
+    return BACKEND.read_bytes(path) if BACKEND.exists(path) else None
+
+
 def read_raw(source: str, season: str, dataset: str, filename: str) -> bytes | None:
     """Lee un artefacto del snapshot más reciente. None si no existe."""
     snap = latest_snapshot(source, season, dataset)

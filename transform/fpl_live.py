@@ -21,6 +21,17 @@ en frío de las temporadas viejas — que es lo que el canvas había previsto.
 90 % apunta a otro futbolista). Dentro de una misma temporada sí es válido, que es como se
 usa acá: para cruzar el snapshot en vivo con el `bootstrap` del mismo momento. La clave
 entre temporadas sigue siendo `player_name`.
+
+⚠️ **El bootstrap que se lee es el CONTEMPORÁNEO de cada fecha, no el último.** El
+bootstrap dice a qué club pertenece cada jugador *hoy*; leer el último le atribuiría las
+estadísticas de la fecha 1 al club al que el jugador se fue después. Medido sobre la GW1 de
+2026-27: 5 de 610 filas quedaban mal atribuidas —Baleba jugó en el Brighton y aparecía como
+del United, tres jugadores del City aparecían en Tottenham y Newcastle— y eso ensucia la
+historia de los dos clubes, porque las features agregan por `(temporada, fixture, equipo)`.
+
+Se arregla leyendo el snapshot de `bootstrap` vigente al momento del snapshot de
+`event_live` de esa fecha. **Bronze es append-only y fechado justamente para esto**: el dato
+correcto ya estaba guardado, sólo había que pedir el de la fecha correcta en vez del último.
 """
 
 from __future__ import annotations
@@ -31,7 +42,8 @@ import pandas as pd
 
 from common.config import CFG
 from common.logging_setup import get_logger
-from common.storage import latest_snapshot, read_raw
+from common.storage import (latest_snapshot, read_raw, read_raw_at,
+                            snapshot_stamp)
 
 log = get_logger(__name__)
 
@@ -51,8 +63,10 @@ STATS = [
 ]
 
 
-def _cargar(season: str, nombre: str, archivo: str):
-    crudo = read_raw(SOURCE, season, nombre, archivo)
+def _cargar(season: str, nombre: str, archivo: str, stamp: str | None = None):
+    """El snapshot vigente al momento `stamp`; si no se pasa, el más reciente."""
+    crudo = (read_raw(SOURCE, season, nombre, archivo) if stamp is None
+             else read_raw_at(SOURCE, season, nombre, archivo, stamp))
     return json.loads(crudo) if crudo else None
 
 
@@ -111,13 +125,10 @@ def build(season: str, dim: pd.DataFrame) -> pd.DataFrame | None:
     if not gws:
         return None
 
-    boot = _cargar(season, "bootstrap", "bootstrap_static.json")
     fx = _cargar(season, "fixtures", "fixtures.json")
-    if boot is None or fx is None:
-        log.warning("[%s] hay event_live pero falta bootstrap o fixtures", season)
+    if fx is None:
+        log.warning("[%s] hay event_live pero falta fixtures", season)
         return None
-
-    jug = _dim_jugadores(boot, dim, season)
     fixtures = _dim_fixtures(fx, dim, season)
 
     frames = []
@@ -126,6 +137,17 @@ def build(season: str, dim: pd.DataFrame) -> pd.DataFrame | None:
         if not live or not live.get("elements"):
             log.info("[%s] GW%d: snapshot vacío (normal en pretemporada)", season, gw)
             continue
+
+        # El equipo de cada jugador sale del bootstrap VIGENTE cuando se tomó este
+        # snapshot. Con el ultimo, un jugador transferido despues arrastraria sus
+        # estadisticas al club nuevo. Ver el aviso del encabezado.
+        snap = latest_snapshot(SOURCE, season, f"event_live_gw{gw}")
+        boot = _cargar(season, "bootstrap", "bootstrap_static.json",
+                       stamp=snapshot_stamp(snap) if snap else None)
+        if boot is None:
+            log.warning("[%s] GW%d: sin bootstrap contemporaneo, se omite", season, gw)
+            continue
+        jug = _dim_jugadores(boot, dim, season)
 
         filas = []
         for e in live["elements"]:
@@ -145,6 +167,9 @@ def build(season: str, dim: pd.DataFrame) -> pd.DataFrame | None:
         # (jugador, gameweek) para no duplicar los totales.
         d = d.drop_duplicates(subset=["fpl_player_id"], keep="first")
         d["gameweek"] = gw
+        # El merge con `jug` va ACA, dentro del loop, porque `jug` ahora es distinto
+        # para cada fecha: es el plantel tal como estaba en ese momento.
+        d = d.merge(jug, on="fpl_player_id", how="left")
         frames.append(d)
 
     if not frames:
@@ -158,7 +183,6 @@ def build(season: str, dim: pd.DataFrame) -> pd.DataFrame | None:
     for c in STATS:
         fact[c] = pd.to_numeric(fact[c], errors="coerce")
 
-    fact = fact.merge(jug, on="fpl_player_id", how="left")
     fact = fact.merge(fixtures.drop(columns="gameweek"), on="fixture_id", how="left")
 
     fact["season"] = season
@@ -173,6 +197,24 @@ def build(season: str, dim: pd.DataFrame) -> pd.DataFrame | None:
         log.warning("[%s] %d filas sin equipo mapeado, se descartan",
                     season, int(sin_equipo.sum()))
         fact = fact[~sin_equipo]
+
+    # Un jugador transferido A MITAD DE FECHA queda inclasificable: el bloque `explain`
+    # del endpoint lo asocia al fixture de su club anterior, y el bootstrap de ese mismo
+    # momento ya lo tiene en el nuevo. No hay forma de saber de qué lado estaba, así que
+    # `was_home` y el rival saldrían inventados.
+    #
+    # Se descartan. Son casos de cero minutos --el jugador no llegó a jugar-- así que no
+    # se pierde nada; lo que se evita es meter una fila en la historia de un club que no
+    # jugó ese partido. Verificado: 1 fila de 114.503.
+    ajeno = ~((fact["team_short"] == fact["home_short"]) |
+              (fact["team_short"] == fact["away_short"]))
+    if ajeno.any():
+        detalle = fact.loc[ajeno, ["player_name", "team_short", "gameweek"]]
+        log.warning("[%s] %d filas de jugadores transferidos a mitad de fecha "
+                    "(su club no jugó ese partido), se descartan: %s",
+                    season, int(ajeno.sum()),
+                    detalle.to_dict("records")[:5])
+        fact = fact[~ajeno]
 
     fact = fact[fact["position"].notna()]
     con_min = int((fact["minutes"] > 0).sum())

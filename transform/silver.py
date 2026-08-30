@@ -291,12 +291,44 @@ def build_fact_player_gw(dim: pd.DataFrame) -> pd.DataFrame:
     # de 96. Los snapshots de /event/{GW}/live/ que guarda la ingesta cubren ese hueco y
     # traen las mismas estadisticas, xG incluido. Sin esto, las doce features derivadas
     # de jugadores llegan VACIAS a produccion.
+    #
+    # ORDEN DE PREFERENCIA, y por que:
+    #
+    #   vaastav donde tenga la fecha  ->  es la version ASENTADA
+    #   la API donde falte            ->  es la que llega a tiempo
+    #
+    # No es una preferencia arbitraria. Comparadas las 610 filas de la GW1 de 2026-27,
+    # las dos fuentes coinciden EXACTAMENTE en todo lo que el modelo cuenta: minutos,
+    # goles, asistencias, vallas invictas, goles concedidos, tarjetas, atajadas, puntos
+    # y bonus. Donde difieren es en el xG del ULTIMO partido del snapshot -- 27 filas de
+    # expected_goals_conceded, todas del FUL-CHE que se estaba cerrando cuando tomamos
+    # la foto-- y en el bloque ICT, que ninguna feature usa. O sea: la API puede
+    # agarrar un partido a medio asentar, vaastav no. Cuando vaastav llega, gana.
+    #
+    # La decision va por FECHA y no por temporada. Con el criterio anterior --"si
+    # vaastav trajo algo de esta temporada, saltear el vivo"-- alcanzaba con que
+    # publicara la fecha 1 para descartar los snapshots de TODO el resto del anio, que
+    # es exactamente el hueco que este modulo existe para tapar.
+    ya_estan = set()
+    for f in frames:
+        if len(f):
+            ya_estan.update(zip(f["season"], f["gameweek"]))
+
     for season in CFG.seasons_to_ingest():
-        if any(f["season"].iloc[0] == season for f in frames if len(f)):
-            continue
         vivo = fpl_live.build(season, dim)
-        if vivo is not None and len(vivo):
-            frames.append(vivo)
+        if vivo is None or vivo.empty:
+            continue
+        falta = ~pd.Series(list(zip(vivo["season"], vivo["gameweek"])),
+                           index=vivo.index).isin(ya_estan)
+        nuevas = vivo[falta]
+        if nuevas.empty:
+            log.info("[%s] event_live: vaastav ya cubre todas las fechas disponibles",
+                     season)
+            continue
+        gws = sorted(int(g) for g in nuevas["gameweek"].unique())
+        log.info("[%s] event_live aporta %d filas en las fechas %s (vaastav no las tiene)",
+                 season, len(nuevas), gws)
+        frames.append(nuevas)
 
     if not frames:
         raise FileNotFoundError(
@@ -305,6 +337,22 @@ def build_fact_player_gw(dim: pd.DataFrame) -> pd.DataFrame:
         )
 
     fact = pd.concat(frames, ignore_index=True)
+
+    # Un jugador juega un fixture UNA vez: dos filas con la misma clave son un duplicado,
+    # y al agregar por (temporada, fixture, equipo) le cuentan los goles dos veces.
+    #
+    # No es hipotético: vaastav trae 20 filas repetidas en 2025-26 --Junior Kroupi y Ben
+    # Gannon-Doak, duplicados fecha tras fecha-- y 2025-26 es justamente el holdout, de
+    # donde salen todas las métricas que se reportan. Las dobles fechas no se ven
+    # afectadas: ahí el `fixture_id` es distinto.
+    clave = ["season", "fpl_player_id", "gameweek", "fixture_id"]
+    n_dup = int(fact.duplicated(subset=clave).sum())
+    if n_dup:
+        muestra = (fact[fact.duplicated(subset=clave, keep=False)]
+                   .groupby(["season", "player_name"]).size().head(5).to_dict())
+        log.warning("descartadas %d filas duplicadas de jugador-fixture (doble conteo): "
+                    "%s", n_dup, muestra)
+        fact = fact.drop_duplicates(subset=clave, keep="first")
 
     n_managers = (~fact["position"].isin(PLAYER_POSITIONS)).sum()
     if n_managers:

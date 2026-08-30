@@ -22,7 +22,7 @@ import json
 
 from common.config import CFG, utc_stamp
 from common.logging_setup import get_logger
-from common.storage import sha256, write_manifest, write_raw
+from common.storage import latest_snapshot, sha256, write_manifest, write_raw
 from ingestion.fpl_client import FPLClient, FPLClientError
 
 log = get_logger(__name__)
@@ -65,7 +65,18 @@ def ingest_fixtures(client: FPLClient, season: str, stamp: str) -> dict:
     played = sum(1 for f in payload if f.get("finished"))
     log.info("fixtures: %d totales, %d jugados (%.1f KB)",
              len(payload), played, len(content) / 1024)
-    return {"n_fixtures": len(payload), "n_finished": played}
+
+    # Qué fechas ya terminaron ENTERAS. Es lo que decide el backfill de event_live:
+    # una fecha a medio jugar se vuelve a bajar en cada corrida; una terminada, no.
+    por_fecha: dict[int, list[bool]] = {}
+    for f in payload:
+        gw = f.get("event")
+        if gw is not None:
+            por_fecha.setdefault(int(gw), []).append(bool(f.get("finished")))
+    completas = sorted(gw for gw, fs in por_fecha.items() if fs and all(fs))
+
+    return {"n_fixtures": len(payload), "n_finished": played,
+            "gw_completas": completas}
 
 
 def ingest_event_live(client: FPLClient, season: str, gameweek: int, stamp: str) -> dict:
@@ -106,13 +117,34 @@ def run(gameweek: int | None = None, season: str | None = None, force: bool = Fa
     boot = ingest_bootstrap(client, season, stamp)
     fixtures = ingest_fixtures(client, season, stamp)
 
-    # Si no se pide una GW puntual, se intenta la que esté en curso.
-    target_gw = gameweek if gameweek is not None else boot.get("current_gw")
-    live = None
-    if target_gw is not None:
-        live = ingest_event_live(client, season, target_gw, stamp)
+    if gameweek is not None:
+        objetivo = [gameweek]
     else:
-        log.info("no hay gameweek en curso — se omite event/live "
+        # BACKFILL. Antes se bajaba solo la fecha en curso, y eso alcanza en una maquina
+        # que corrio la ingesta todas las semanas: Bronze acumula. Pero en un clon nuevo
+        # --que es el caso de Cloud Shell-- no hay nada, y entonces las fechas pasadas
+        # solo existen si vaastav ya las publico. Justo el hueco que event_live tapa.
+        #
+        # Se baja: todas las fechas TERMINADAS (una vez cada una, porque su resultado ya
+        # no cambia) mas la que este en curso (esa si, en cada corrida).
+        completas = fixtures.get("gw_completas", [])
+        en_curso = boot.get("current_gw")
+        objetivo = sorted({*completas, *( [en_curso] if en_curso is not None else [] )})
+
+    live = []
+    for gw in objetivo:
+        # Una fecha terminada no cambia mas: si ya esta en Bronze, no se vuelve a bajar.
+        # La que esta en curso siempre se re-baja, porque le faltan partidos.
+        terminada = gw in fixtures.get("gw_completas", [])
+        ya_esta = latest_snapshot(SOURCE, season, f"event_live_gw{gw}") is not None
+        if terminada and ya_esta and not force:
+            log.info("event/%d/live ya está en Bronze y la fecha terminó — se omite "
+                     "(usar --force para re-bajarla)", gw)
+            continue
+        live.append(ingest_event_live(client, season, gw, stamp))
+
+    if not objetivo:
+        log.info("no hay ninguna fecha jugada ni en curso — se omite event/live "
                  "(usar --gw N para forzar una fecha puntual)")
 
     return {"stamp": stamp, "bootstrap": boot, "fixtures": fixtures, "live": live}

@@ -133,6 +133,33 @@ La API oficial **no sirve el detalle fecha a fecha del pasado**. Verificado sobr
 
 vaastav archiva semanalmente el `history` de cada jugador, y por eso el pasado sólo existe ahí.
 
+### Y cómo se combinan las dos para la temporada en curso
+
+```
+vaastav donde tenga la fecha   ->  es la version ASENTADA
+la API donde falte             ->  es la que llega a tiempo
+```
+
+La decisión va por **(temporada, fecha)**, nunca por temporada entera: alcanzaba con que
+vaastav publicara la fecha 1 para descartar los snapshots en vivo de todo el resto del año,
+que es justo el hueco que la API existe para tapar.
+
+**No son exactamente los mismos datos.** Comparadas las 610 filas de la GW1 de 2026-27:
+
+| | Diferencias |
+|---|---|
+| minutos, goles, asistencias, vallas, goles concedidos, tarjetas, atajadas, **puntos**, bonus | **0 de 610** — idénticos |
+| `expected_goals`, `xGI`, `xGC` | 7 / 10 / 27, **todas del último partido del snapshot** (se estaba cerrando cuando se tomó la foto) |
+| `influence`, `creativity`, `threat`, `ict_index` | ~45 % de las filas — **ninguna feature del modelo las usa** |
+
+Por eso vaastav gana cuando llega: la API puede agarrar un partido a medio asentar.
+
+⚠️ **El `bootstrap` que se lee es el contemporáneo de cada fecha, no el último.** El bootstrap
+dice a qué club pertenece cada jugador *hoy*: leyendo el último, Baleba —que jugó la fecha 1
+en el Brighton y se fue al United— aparecía con sus stats atribuidas al United. Bronze es
+append-only y fechado justamente para esto. Un jugador transferido *a mitad de fecha* queda
+inclasificable y se descarta, con warning.
+
 ### Notas de implementación verificadas
 
 - **La API exige `User-Agent` de browser** (si no, 403) y **tiene CORS**: se consume siempre desde
