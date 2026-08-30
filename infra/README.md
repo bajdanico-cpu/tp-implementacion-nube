@@ -1,7 +1,16 @@
 # Infraestructura
 
-Pendiente. **No hay proyecto GCP todavía** — por eso todo corre local y la capa de
-storage está abstraída.
+**El pipeline ya corre en Cloud Shell hasta el modelo entrenado**, con el dato y los
+artefactos persistidos en un bucket de GCS:
+
+- [`notebooks/01_gcp_cloudshell.ipynb`](../notebooks/01_gcp_cloudshell.ipynb) — el lab: se
+  clona el repo, se corre celda por celda, cada paso deja un recurso visible en la consola,
+  y **la última celda borra todo** para no dejar nada facturando.
+- [`gcp/runbook.md`](../gcp/runbook.md) — los mismos pasos por terminal, con los chequeos
+  de limpieza.
+
+Lo que **todavía no está** es el servicio permanente (Cloud Run), la imagen y los dos jobs
+programados. Por eso el resto de esta página sigue siendo el plan.
 
 ## Recursos previstos
 

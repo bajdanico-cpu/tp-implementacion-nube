@@ -13,8 +13,11 @@ jupyter lab notebooks/00_recorrido_completo.ipynb
 
 ```powershell
 .\scripts\setup_env.ps1
-python -m ingestion.run
+python -m ingestion.run              # las tres fuentes publicas de siempre
+python -m ingestion.bronze_pulselive # la API oficial: copas, Europa y stats de Opta
 python -m transform.silver
+python -m transform.competencias
+python -m transform.opta_stats
 python -m features.gold_tp
 ```
 
@@ -22,7 +25,47 @@ El notebook no reimplementa nada: cada paso llama a los módulos del repo, así 
 corre ahí es exactamente lo que corre en producción. Si un número del notebook cambia, es
 porque cambió el pipeline.
 
-Tarda unos minutos: la sección 10 hace 38 reentrenamientos (el walk-forward).
+Tarda unos minutos: la sección 11 hace 38 reentrenamientos (el walk-forward) y la 6
+entrena dos veces, para mostrar la diferencia entre el modelo de evaluación y el de
+producción.
+
+Las 17 secciones van del dato crudo al deploy: los datos y la regla anti-leakage (1-2),
+las features y las dos fuentes nuevas (3-5), el modelo y sus métricas honestas (6-13),
+y el ciclo operativo ya corriendo — predicción, monitoreo y reproducibilidad (14-17).
+
+---
+
+## `01_gcp_cloudshell.ipynb`
+
+El **lab en la nube**: se clona el repo en Cloud Shell, se corre celda por celda, y cada
+paso deja un recurso visible en la consola de GCP. Es el equivalente, para este TP, del lab
+de la clase 4 del profesor.
+
+```bash
+git clone <url-del-repo> tp-premier-ml
+cd tp-premier-ml
+pip install -q -r requirements-cloud.txt
+# abrir notebooks/01_gcp_cloudshell.ipynb en el editor de Cloud Shell
+```
+
+**El clon no trae datos** (`data/` está en `.gitignore`): las primeras celdas bajan las
+cuatro fuentes y arman Silver y Gold desde cero. Eso mismo es la prueba de que el pipeline
+es reproducible sobre una máquina que nunca vio el proyecto.
+
+Llega hasta **el modelo entrenado y versionado en el bucket** — proyecto, Bronze, Silver,
+Gold, modelo — y ahí para. No sirve el modelo ni despliega nada: eso es la etapa siguiente.
+La predicción, el monitoreo y el ciclo cerrado ya funcionan, pero corren en local y se ven en
+el notebook de arriba.
+
+**La última celda borra el bucket y verifica que no quedó nada facturando**, y el runbook
+tiene los dos chequeos que faltan (que no haya servicios ni endpoints, y apagar la API).
+Lo que se prende, se paga.
+
+Los comandos equivalentes por terminal están en [`gcp/runbook.md`](../gcp/runbook.md).
+
+> **`requirements-cloud.txt` y no `requirements.txt`.** El de local está pinneado a wheels
+> `cp314` (Python 3.14.3) y Cloud Shell trae otro Python: pip intentaría compilar numpy y
+> pandas desde el fuente y la sesión se cae.
 
 ---
 
@@ -40,4 +83,4 @@ Generándolo desde un `.py`:
   produce un archivo byte a byte idéntico** — si fueran aleatorios, cada corrida ensuciaría
   el diff.
 
-Para cambiar el notebook: se edita el `.py` y se regenera.
+Para cambiar cualquiera de los dos notebooks: se edita el `.py` y se regenera.
