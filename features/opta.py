@@ -64,13 +64,19 @@ def historia(stats: pd.DataFrame, comp: pd.DataFrame) -> pd.DataFrame:
     indexadas por el id de equipo de la API, no por nombre.
     """
     clave = ["season", "fixture_pl_id", "team_id_pl"]
-    base = comp.loc[comp["es_premier"], clave + ["team_short", "kickoff_time"]]
+    base = comp.loc[comp["es_premier"], clave + ["team_short", "kickoff_time", "terminado"]]
     d = base.merge(stats, on=clave, how="left")
 
-    faltan = d[A_RODAR[0]].isna().mean()
+    # La cobertura se mide SOLO sobre partidos ya jugados: un fixture futuro de la
+    # temporada en curso no tiene estadisticas porque todavia no se jugo, no porque
+    # falte ingesta. Sin este filtro el aviso salta al 20 % en agosto -- 740 fixtures
+    # de 2026-27 que aun no ocurrieron -- y se vuelve ruido que se aprende a ignorar.
+    jugados = d[d["terminado"].fillna(False)] if "terminado" in d else d
+    faltan = jugados[A_RODAR[0]].isna().mean() if len(jugados) else 0.0
     if faltan > 0.05:
-        log.warning("El %.0f%% de los partidos de Premier no tiene estadisticas de Opta. "
-                    "Puede faltar ingesta: python -m ingestion.bronze_pulselive", faltan * 100)
+        log.warning("El %.0f%% de los partidos de Premier YA JUGADOS no tiene "
+                    "estadisticas de Opta. Puede faltar ingesta: "
+                    "python -m ingestion.bronze_pulselive", faltan * 100)
 
     d = d.sort_values(["team_short", "kickoff_time"]).reset_index(drop=True)
     g = d.groupby("team_short", sort=False)
