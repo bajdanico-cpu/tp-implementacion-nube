@@ -5,10 +5,13 @@ edita a mano, así el diff es legible y no se versionan salidas de ejecución.
 
     python notebooks/01_gcp_cloudshell.py
 
-**Alcance deliberado.** El notebook llega hasta donde llegó la clase: proyecto, bucket,
-dato en la nube, Gold y un modelo entrenado. La predicción de la fecha, el monitoreo en
-vivo y el ciclo cerrado están en `00_recorrido_completo.ipynb` y corren en local; llevarlos
-a la nube es la clase que viene y acá no se adelanta.
+**Alcance deliberado.** El notebook llega hasta donde llegó la clase: proyecto, bucket, dato
+en la nube, Gold, un modelo entrenado y registrado, y la predicción de una fecha corriendo
+como batch. No levanta servicios ni construye imágenes: eso es la clase que viene y acá no
+se adelanta.
+
+El Paso 7 predice las fechas 1 y 2 **y demuestra que no hay leakage temporal**, que es el
+riesgo real de correr esto mientras se juega una fecha.
 
 **La última celda borra todo.** No es una cortesía: el lab no puede dejar nada prendido
 comiendo crédito.
@@ -90,15 +93,18 @@ clon limpio en una máquina que nunca vio el proyecto, funciona.
 
 ## Qué hace este notebook, y qué no
 
-Llega hasta **el modelo entrenado y versionado en el bucket**:
+Llega hasta **la predicción de una fecha, con su registro y su prueba de que no miró el
+futuro**:
 
 ```
-proyecto → bucket → Bronze → Silver → Gold → modelo → limpieza
+proyecto → bucket → Bronze → Silver → Gold → modelo → predicción → limpieza
 ```
 
-**No** sirve el modelo, **no** despliega nada y **no** deja ningún recurso prendido. La
-predicción de la fecha, el monitoreo en vivo y el ciclo cerrado ya están implementados y
-corren en local: se ven en
+**No** levanta ningún servicio, **no** construye ninguna imagen y **no** deja ningún recurso
+prendido. La predicción corre como un batch, igual que el entrenamiento. Envolverla en una
+API y desplegarla es la etapa siguiente y acá no se adelanta nada.
+
+El monitoreo de la temporada en curso también está implementado y se ve en
 [`00_recorrido_completo.ipynb`](00_recorrido_completo.ipynb).
 
 **El caso.** Predecir el resultado (gana local / empate / gana visitante) de cada fecha de
@@ -107,6 +113,10 @@ solo**, dos horas después de la predicción.
 
 > ⚠️ **La última celda borra todo lo que este lab creó en la nube.** Correla siempre antes
 > de cerrar la sesión. Lo que se prende, se paga.
+
+> ⚠️ **Si corrés esto mientras se está jugando una fecha**, leé el Paso 7 antes de sacar
+> conclusiones. Es el momento exacto en que el leakage temporal se cuela, y hay una celda
+> dedicada a demostrar que no pasó.
 """),
 
 md("""
@@ -375,7 +385,125 @@ subir("models", "models")
 
 md("""
 ---
-## Paso 7 — Qué quedó en la nube
+## Paso 7 — Predecir una fecha, y probar que no miró el futuro
+
+Esta es la inferencia. `serving/predict.py` es **la lógica que iría adentro de un endpoint**:
+ya está escrita y probada, y hace tres cosas que ninguna es decorativa.
+
+| | Qué garantiza | Qué pasa si falta |
+|---|---|---|
+| Usa **el mismo código de features** que el entrenamiento — `features.gold_tp.construir(objetivos=...)` es literalmente la misma función | no hay train/serve skew | dos implementaciones paralelas de la misma feature divergen en silencio, y es el bug más caro de MLOps |
+| **Valida el orden de las columnas** contra el `metadata.json` | el modelo recibe lo que espera | XGBoost recibe un `ndarray`: con las columnas en otro orden **no se queja**, predice cualquier cosa. Fallo silencioso |
+| **Registra cada predicción** con fixture, momento, versión de modelo y de feature set | hay con qué medir después | un endpoint que responde, y nada más |
+
+Predecimos **dos** fechas, y son casos distintos a propósito: la **1** ya se jugó entera, así
+que se puede comparar contra el resultado real; la **2** se está jugando ahora mismo, que es
+el caso peligroso.
+"""),
+code("""
+correr("serving.predict", "--gw", "1")
+"""),
+code("""
+correr("serving.predict", "--gw", "2")
+"""),
+
+md("""
+### El riesgo real: predecir una fecha que se está jugando
+
+Los datos de un partido se conocen **después** de que se jugó. Si una feature de la fecha N
+usa datos de la fecha N, el modelo está viendo el resultado: la accuracy se dispara y el
+trabajo entero no vale nada.
+
+Y correr esto **durante** una fecha es el momento en que eso se cuela sin que nadie lo note,
+porque la información llega de a pedazos: al momento de escribir esto la fecha 2 tiene 8 de
+10 partidos con marcador en la API de FPL, dos todavía sin jugar, y varios jugadores con
+minutos cargados de partidos en curso.
+
+La defensa no es acordarse de no mirar. Es una regla, aplicada por el código:
+
+```
+corte(partido) = min(kickoff_time) de todos los partidos de su (temporada, gameweek)
+```
+
+Toda feature usa **únicamente partidos terminados antes de ese corte**. El corte es el inicio
+de la fecha, así que **ningún partido de la fecha 2 puede entrar en las features de la fecha
+2**, ni siquiera los que ya terminaron.
+
+El mecanismo es `merge_asof`, **no** `shift(1)`: *shift cuenta partidos, merge_asof cuenta
+tiempo*. Y la prueba queda guardada en la propia predicción: `hist_kickoff_local` y
+`hist_kickoff_visita` son el kickoff del último partido efectivamente usado.
+
+La celda de abajo compara ese máximo contra el corte. **Si alguna vez diera negativo, hay
+leakage** — y de hecho `serving/predict.py` levanta un `AssertionError` antes de llegar acá.
+"""),
+code("""
+import pandas as pd
+
+def evidencia(gw):
+    # El ultimo partido usado como historia vs. el corte de la fecha.
+    arch = sorted((RAIZ / "data" / "predicciones").glob(f"*_GW{gw:02d}_*.parquet"))[-1]
+    p = pd.read_parquet(arch)
+    hist = pd.concat([p["hist_kickoff_local"], p["hist_kickoff_visita"]]).max()
+    corte = p["kickoff_time"].min()
+    return {"fecha": f"GW{gw}", "partidos": len(p),
+            "ultimo partido usado como historia": hist,
+            "corte de la fecha": corte,
+            "margen": corte - hist,
+            "sin leakage": bool(hist < corte)}
+
+ev = pd.DataFrame([evidencia(1), evidencia(2)]).set_index("fecha")
+for f, fila in ev.iterrows():
+    print(f)
+    for k, v in fila.items():
+        print(f"    {k:36s} {v}")
+    print()
+"""),
+
+md("""
+Leído con calendario en la mano:
+
+- **Fecha 1** — la última historia es del **24/05/2026**: el cierre de la temporada pasada.
+  Todavía no se había jugado nada de 2026-27, así que el margen es de casi 90 días.
+- **Fecha 2** — la última historia es del **24/08/2026 19:00**, que es FUL–CHE: el último
+  partido de la fecha 1. El corte de la fecha 2 es el 28/08 19:00. O sea: **la fecha 1 entra
+  como historia —que es lo correcto y lo que queremos— y la fecha 2 no entra en absoluto**,
+  aunque 8 de sus partidos ya se hayan jugado.
+
+**La prueba que convence de verdad es la de abajo.** Si la fecha 1 estuviera filtrando su
+propio resultado, el modelo acertaría 10 de 10. Acierta 4.
+"""),
+code("""
+correr("serving.predict", "--gw", "1", "--evaluar", "--no-guardar")
+"""),
+
+md("""
+Cuatro de diez, contra siete de "siempre al local". Antes de sacar conclusiones: fue una
+fecha con **7 locales de 10** contra el 44,5 % histórico, y con n=10 el intervalo de la
+accuracy va de 0,10 a 0,70. **Diez partidos no distinguen nada de nada** — que es
+exactamente el argumento por el cual la regla de promoción del modelo no se decide sobre una
+sola fecha.
+
+Los dos errores más caros fueron los ascendidos ganando de local (HUL–MUN, IPS–SUN): es el
+*cold-start* en vivo, la situación donde el modelo tiene menos historia y más se equivoca.
+
+### ¿Y la fecha 2?
+
+Todavía no se puede evaluar, y el pipeline lo dice en vez de inventar un número. La
+evaluación cruza contra `fact_match`, que sale de football-data —la fuente con las cuotas—,
+y esa fuente publica la fecha **cuando termina entera**. Los marcadores parciales que hoy
+tiene la API de FPL no alcanzan.
+
+Es un detalle que vale la pena mirar de frente: **el ground truth llega solo, pero llega
+cuando quiere la fuente, no cuando lo necesitamos**. Un sistema honesto espera; uno apurado
+completa con lo que tiene y se miente.
+"""),
+code("""
+subir("data/predicciones", "predicciones")
+"""),
+
+md("""
+---
+## Paso 8 — Qué quedó en la nube
 
 El pipeline entero corrió en Cloud Shell, **sin una sola credencial de datos**, y dejó el
 bucket con la estructura medallion completa más el modelo y su trazabilidad.
@@ -399,7 +527,7 @@ print(f"\\n  {'TOTAL':16s} {'':>5}           {total:>8.1f} MB")
 
 md("""
 ---
-## Paso 8 — Limpieza: apagar todo
+## Paso 9 — Limpieza: apagar todo
 
 **Regla de oro de la nube: lo que prendés, cuesta.** Y lo que cuesta sin que lo mires es lo
 que se come el crédito.
@@ -482,12 +610,15 @@ Lo que se demostró en la nube:
 | Silver | normalizado, 100 % de cruce entre fuentes |
 | Gold | 1.530 × 301, con el control anti-leakage corriendo antes de escribir |
 | Modelo | entrenado en CPU, versionado, con su contrato de features |
+| Predicción | fechas 1 y 2 predichas y registradas, con la prueba de que no miraron el futuro |
 | Costo al cerrar | **cero** — todo borrado y verificado |
 
-**Lo que ya funciona pero corre en local**, y se ve en
-[`00_recorrido_completo.ipynb`](00_recorrido_completo.ipynb): la predicción de la fecha con
-su registro, la evaluación contra el resultado real cuando el partido termina, y el
-monitoreo de la temporada en curso contra los baselines. El ciclo cerrado está entero; lo que
+**Lo que falta** es envolver la predicción en una API y desplegarla: hoy corre como un batch,
+igual que el entrenamiento. El monitoreo de la temporada en curso —métricas fecha a fecha
+contra los baselines calculados sobre las mismas filas— también está escrito y corre en
+local; se ve en [`00_recorrido_completo.ipynb`](00_recorrido_completo.ipynb).
+
+El ciclo cerrado está entero: se predice, se registra, llega el resultado y se mide. Lo que
 falta es empaquetarlo, y eso es la clase que viene.
 
 Los comandos equivalentes por terminal están en [`gcp/runbook.md`](../gcp/runbook.md).

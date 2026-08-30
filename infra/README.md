@@ -1,6 +1,6 @@
 # Infraestructura
 
-**El pipeline ya corre en Cloud Shell hasta el modelo entrenado**, con el dato y los
+**El pipeline ya corre en Cloud Shell hasta la predicción de una fecha**, con el dato y los
 artefactos persistidos en un bucket de GCS:
 
 - [`notebooks/01_gcp_cloudshell.ipynb`](../notebooks/01_gcp_cloudshell.ipynb) — el lab: se

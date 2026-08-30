@@ -52,10 +52,12 @@ pip install -q -r requirements-cloud.txt
 cuatro fuentes y arman Silver y Gold desde cero. Eso mismo es la prueba de que el pipeline
 es reproducible sobre una máquina que nunca vio el proyecto.
 
-Llega hasta **el modelo entrenado y versionado en el bucket** — proyecto, Bronze, Silver,
-Gold, modelo — y ahí para. No sirve el modelo ni despliega nada: eso es la etapa siguiente.
-La predicción, el monitoreo y el ciclo cerrado ya funcionan, pero corren en local y se ven en
-el notebook de arriba.
+Llega hasta **la predicción de una fecha, registrada en el bucket** — proyecto, Bronze,
+Silver, Gold, modelo, predicción — y ahí para. No levanta ningún servicio ni construye
+imágenes: eso es la etapa siguiente.
+
+El Paso 7 predice las fechas 1 y 2 y **demuestra que no hay leakage temporal**, que es el
+riesgo real de correrlo mientras se está jugando una fecha.
 
 **La última celda borra el bucket y verifica que no quedó nada facturando**, y el runbook
 tiene los dos chequeos que faltan (que no haya servicios ni endpoints, y apagar la API).

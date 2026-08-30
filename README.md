@@ -286,8 +286,9 @@ recorre el proyecto entero paso a paso, con los números a la vista.
 
 **[`notebooks/01_gcp_cloudshell.ipynb`](notebooks/01_gcp_cloudshell.ipynb)** — el lab en la
 nube: se clona el repo en Cloud Shell, se corre celda por celda, y cada paso deja un recurso
-visible en la consola. Llega hasta el **modelo entrenado y versionado en el bucket**, y
-**la última celda borra todo** para no dejar nada facturando. Usa `requirements-cloud.txt`
+visible en la consola. Llega hasta la **predicción de una fecha registrada en el bucket**,
+con la verificación de que no hay leakage temporal, y **la última celda borra todo** para no
+dejar nada facturando. Usa `requirements-cloud.txt`
 (Cloud Shell no tiene Python 3.14). Los comandos por terminal están en
 [`gcp/runbook.md`](gcp/runbook.md).
 

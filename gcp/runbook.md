@@ -9,8 +9,9 @@ Comandos parametrizados para correr el pipeline en Google Cloud. Está escrito p
 > editor **no hereda el entorno de la sesión** y `gcloud` desde ahí queda sin proyecto ni
 > auth. Los comandos de este runbook son para la terminal.
 
-**Alcance.** Hasta el modelo entrenado y versionado en el bucket. No se despliega nada: no
-hay servicio, ni imagen, ni job programado. Eso es la etapa siguiente y todavía no está.
+**Alcance.** Hasta la predicción de una fecha, corriendo como batch, con su registro en el
+bucket. No se despliega nada: no hay servicio, ni imagen, ni job programado. Eso es la etapa
+siguiente y todavía no está.
 
 ---
 
@@ -74,6 +75,41 @@ gcloud storage rsync -r models "gs://${BUCKET}/models"
 
 Acá entrena en **CPU**: Cloud Shell no tiene GPU y `device: auto` cae solo. Es lo esperado y
 está medido — ver *Decisiones ya tomadas*.
+
+### Predecir, y verificar que no miró el futuro
+
+```bash
+python -m serving.predict --gw 1                   # una fecha ya jugada
+python -m serving.predict --gw 2                   # la que se está jugando
+python -m serving.predict --gw 1 --evaluar         # contra el resultado real
+gcloud storage rsync -r data/predicciones "gs://${BUCKET}/predicciones"
+```
+
+⚠️ **Correr esto durante una fecha es el momento en que el leakage temporal se cuela**, porque
+la información llega de a pedazos: marcadores parciales en la API de FPL, jugadores con
+minutos de partidos en curso, y la fecha todavía sin cerrar.
+
+La defensa es una regla aplicada por el código, no un cuidado manual:
+
+```
+corte(partido) = min(kickoff_time) de todos los partidos de su (temporada, gameweek)
+```
+
+Ningún partido de la fecha N entra en las features de la fecha N, **ni siquiera los que ya
+terminaron**. Cada predicción guarda `hist_kickoff_local` / `hist_kickoff_visita` —el kickoff
+del último partido efectivamente usado— y `serving/predict.py` levanta un `AssertionError`
+antes de escribir si alguno es posterior al corte.
+
+Verificado el 30/08/2026, con la fecha 2 en juego (8 de 10 partidos con marcador):
+
+| Fecha | Última historia usada | Corte | Margen |
+|---|---|---|---|
+| GW1 | 2026-05-24 15:00 (cierre de 2025-26) | 2026-08-21 19:00 | 89 días |
+| GW2 | 2026-08-24 19:00 (FUL–CHE, último de la GW1) | 2026-08-28 19:00 | 4 días |
+
+La fecha 1 entra como historia de la fecha 2 —que es lo correcto— y la fecha 2 no entra en
+absoluto. **La prueba que convence:** si la GW1 filtrara su propio resultado acertaría 10 de
+10; acierta 4.
 
 ---
 
