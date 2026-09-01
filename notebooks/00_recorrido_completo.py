@@ -621,6 +621,187 @@ umbral de apuesta son 5 puntos.
 """),
 
 md("""
+### Y si en vez de clasificar, predecimos los goles
+
+La idea surge sola al ver la matriz de confusión: en vez de aprender la clase, predecir
+**cuántos goles hace cada equipo** y derivar el 1X2 de la distribución conjunta. El empate
+deja de ser una etiqueta y pasa a ser lo que realmente es —los dos marcan lo mismo— y encima
+el modelo mira el problema desde otro ángulo, que es la condición para que un **ensamble**
+aporte.
+
+Está implementado (`PoissonBivariado`, dos regresores XGBoost con `objective="count:poisson"`)
+y **no hace falta ninguna base nueva**: Gold ya tiene `home_goals` y `away_goals`.
+
+`python -m training.ensamble` mide las tres preguntas de una.
+"""),
+code("""
+ens = RAIZ / "training" / "output" / "ensamble_clf_goles.csv"
+if ens.exists():
+    display(pd.read_csv(ens).round(4))
+else:
+    print("Falta la corrida. Ejecutar: python -m training.ensamble")
+"""),
+
+md("""
+**El ensamble no aporta: ningún peso le gana al clasificador solo.** Y la razón no es un
+misterio, es una medición:
+
+```
+coinciden en el argmax          89,7 %
+correlacion de p_away            0,906
+correlacion de p_home            0,934
+correlacion de p_draw            0,340   <- aca SI piensan distinto
+```
+
+Un ensamble sirve cuando los modelos **fallan en lugares distintos**. Éstos fallan casi en
+los mismos partidos: fallan los dos en el 46,1 % y sólo uno de los dos acierta en el 8,4 %.
+
+*(Combinar modelos ya se había probado en general —promedio simple y stacking con folds
+temporales sobre los cuatro modelos base— y tampoco mejoraba; está en
+[`training/README.md`](../training/README.md). Lo que faltaba era el **porqué**, y es esta
+correlación.)*
+
+Pero adentro de ese resultado negativo hay algo: **para el empate la correlación es 0,34**.
+Ahí sí discrepan — y el modelo de goles predice **cero** empates como argmax, contra 4 del
+clasificador.
+"""),
+
+md("""
+### La corrección de Dixon-Coles, y por qué acá no aplica
+
+Esa discrepancia tiene una causa concreta en el código: la conjunta se arma multiplicando
+las dos distribuciones, o sea **asume independencia** entre los goles de los dos equipos. Es
+falso justo en los marcadores bajos, que es donde vive el empate.
+
+La corrección clásica es **Dixon-Coles (1997)**: un parámetro `ρ` que reajusta esas cuatro
+celdas.
+
+```
+τ(0,0) = 1 - λμρ      τ(0,1) = 1 + λρ
+τ(1,0) = 1 + μρ       τ(1,1) = 1 - ρ
+```
+
+Con `ρ < 0` sube 0-0 y 1-1 y baja 1-0 y 0-1: sube P(empate). El `ρ` se ajusta por máxima
+verosimilitud sobre el train — y como el término de Poisson no depende de `ρ`, se reduce a
+maximizar `Σ log τ`, una optimización de una sola variable.
+
+**Está implementado y medido, y el resultado es que no aplica.** El diagnóstico dice
+exactamente por qué:
+"""),
+code("""
+from training import ensamble as ens_mod
+from training import dataset as ds
+
+full_g = ds.filtrar_train(gold[gold.season.isin(CFG.seasons_for_training())])
+X_g = ds.matriz(full_g, spec.FEATURES)
+celdas = ens_mod.diagnostico_celdas(
+    X_g, full_g.home_goals.to_numpy().astype(int),
+    full_g.away_goals.to_numpy().astype(int), info)
+display(celdas.round(3))
+"""),
+
+md("""
+**0-0 aparece MENOS de lo que predice la independencia (0,666) y 1-1 MÁS (1,087).** Las dos
+celdas del empate se desvían en direcciones **opuestas**.
+
+Y la `τ` de Dixon-Coles tiene **un solo parámetro**, que las empuja a las dos en la **misma**
+dirección: no existe un `ρ` capaz de bajar una y subir la otra. La máxima verosimilitud lo
+resuelve quedándose en **ρ = −0,0074** —contra el −0,13 que Dixon y Coles reportan para el
+fútbol inglés—, que es la forma matemática de decir *"esta corrección no aplica a estos
+datos"*. El efecto sobre el holdout es de +0,002 en P(empate) y −0,0002 en log-loss: nada.
+
+**Lo que sí sigue siendo cierto** es que el modelo subestima el empate: los empates
+observados superan a los esperados en un 4,7 %. El déficit existe. Lo que no existe es que
+tenga *la forma* que Dixon-Coles corrige.
+
+Se conserva el código, apagado por defecto y con `poisson_dc` en la grilla, por el mismo
+motivo que las features de Opta: **saber que algo no funciona, y por qué, también es un
+resultado** — y éste señala hacia dónde habría que ir si se retomara (una corrección con más
+de un parámetro, o calibrar el empate directamente).
+"""),
+
+md("""
+### El estadístico que cierra la discusión: el AUC del empate
+
+Todo lo anterior mira **accuracy y F1**, y para el empate las dos engañan. Un modelo que
+**nunca** predice empate puede tener buena accuracy y no saber absolutamente nada del
+empate. La pregunta correcta es otra: *¿pone más probabilidad de empate en los partidos que
+terminaron empatados?* Eso lo mide el **AUC uno-contra-resto**, y además no depende del
+umbral.
+
+`python -m training.empate` lo corre sobre las cuatro familias.
+"""),
+code("""
+from training import empate as emp
+
+res_emp = emp.correr()
+display(res_emp["discriminacion"][["auc_away", "auc_draw", "auc_home",
+                                   "ic_draw", "draw_sin_señal"]].round(3))
+"""),
+
+md("""
+```
+          AUC_away  AUC_draw  AUC_home     IC95 del empate
+xgb_gbt      0,680     0,515     0,683     [0,441 - 0,584]
+poisson      0,648     0,479     0,655     [0,412 - 0,543]
+ordinal      0,606     0,493     0,648     [0,431 - 0,559]
+marcador     0,641     0,460     0,659     [0,392 - 0,525]
+mercado      0,674     0,531     0,697     [0,465 - 0,592]
+```
+
+**Cuatro familias de modelos distintas, las cuatro en 0,5 para el empate** — y el 0,5 está
+dentro del intervalo en todas. Los mismos modelos discriminan local y visitante con AUC
+0,65-0,68. **No es que el empate se prediga mal: es que no se puede rankear.**
+"""),
+code("""
+print("tasa real de empates por decil de p_draw (si rankeara, subiria):\\n")
+display(res_emp["deciles"].round(3))
+"""),
+
+md("""
+### La trampa del F1, que hay que saber antes de la defensa
+
+| modelo | F1 del empate | empates predichos | AUC del empate |
+|---|---|---|---|
+| `ordinal` | **0,209** | 68 | 0,493 |
+| `marcador` | 0,098 | 19 | 0,460 |
+| `xgb_gbt` | 0,056 | 4 | 0,515 |
+
+**El mejor F1 del empate viene con el AUC más cerca de 0,5.** Sube por predecir *más*
+empates, no por acertarlos. Optimizar el F1 del empate premia adivinar más seguido — sin el
+AUC al lado, ese número miente.
+
+### Y la vara que impide sacar la conclusión equivocada
+
+Sobre las 1.530 filas con cuotas de las cinco temporadas, el **mercado** —casas de apuestas
+con plata de verdad e información que este proyecto no tiene— saca **AUC 0,563** para el
+empate contra **0,733 y 0,735** para local y visitante.
+
+Tiene señal, pero es minúscula, y **hace falta n=1.530 para demostrar que existe**. Con los
+380 partidos del holdout, nuestro 0,515 es indistinguible de ese 0,563.
+
+**El techo no es el algoritmo: es el tamaño de la muestra.** Por eso ninguna de las tres
+ideas de esta sección —el modelo de goles, el ensamble, Dixon-Coles— movió la aguja. No
+estaban atacando el problema real.
+
+### Lo único que sí es una palanca
+
+El **umbral** con el que se decide llamar empate, que no es una decisión de modelado sino
+**de negocio**: cuánto cuesta perderse un empate contra cuánto cuesta anunciar uno que no
+fue.
+"""),
+code("""
+display(res_emp["umbral"].round(4))
+"""),
+
+md("""
+Bajándolo de argmax a **0,30**: de 4 empates predichos a 36, precisión 0,417, y la accuracy
+global **no baja** (0,5079 contra 0,5000). Parece gratis — pero con AUC 0,515 eso es afinar
+un umbral sobre una señal que no ordena, y por eso **no se cambió el modelo de producción**.
+Queda como dial documentado, para el día que el costo de cada tipo de error esté definido.
+"""),
+
+md("""
 ---
 ## 8 · Qué features pesan
 

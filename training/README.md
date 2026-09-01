@@ -476,6 +476,7 @@ dos. Es una decisión tomada con un número, no por gusto.
 | **`hgb`** (HistGradientBoosting de sklearn) | **0,500** | **0,395** | 0,055 | **1,031** | 6 |
 | `xgb_gbt` | 0,492 | 0,385 | 0,037 | 1,044 | 5 |
 | Poisson bivariado | 0,484 | 0,367 | **0,000** | 1,042 | **0** |
+| Poisson + Dixon-Coles | 0,484 | 0,367 | **0,000** | 1,040 | **0** |
 | Logit ordinal | 0,432 | 0,385 | **0,184** | 1,131 | 70 |
 | **Red neuronal (MLP)** | **0,426** | 0,378 | 0,129 | 1,100 | 67 |
 | Ensamble de los cinco | 0,492 | 0,384 | 0,036 | 1,033 | 6 |
@@ -699,6 +700,150 @@ y pierde tres puntos de accuracy.
 El promedio simple empata al mejor modelo individual en log-loss (1,0319 contra 1,0323) sin
 aportar nada. Conclusion: **un solo modelo bien regularizado le gana a cualquier
 combinacion**, a esta escala.
+
+### Y por que no aporta: la medicion que faltaba
+
+Lo de arriba dice *que* no funciona. Faltaba *por que*. `python -m training.ensamble` aisla
+la combinacion mas prometedora sobre el papel —el clasificador contra el modelo de goles,
+que atacan el problema desde angulos distintos— y barre los pesos:
+
+| | Accuracy | Log-loss |
+|---|---|---|
+| `xgb_gbt` solo | **0,5000** | 1,0291 |
+| `poisson` solo | 0,4947 | 1,0439 |
+| ensamble 0,50/0,50 | 0,4895 | 1,0322 |
+| ensamble 0,75/0,25 | 0,4868 | 1,0295 |
+
+Ningun peso le gana al clasificador solo. Y el diagnostico dice la razon:
+
+```
+coinciden en el argmax          89,7 %
+aciertan los dos                45,5 %
+fallan los dos                  46,1 %      <- se equivocan en los MISMOS partidos
+acierta solo uno de los dos      8,4 %
+
+correlacion de p_away            0,906
+correlacion de p_home            0,934
+correlacion de p_draw            0,340      <- la unica excepcion
+```
+
+**Un ensamble sirve cuando los modelos fallan en lugares distintos.** Estos fallan casi en
+los mismos: se decorrelacionan unicamente en el empate.
+
+---
+
+## El empate: no es una falla del modelo, es un evento que no se puede rankear
+
+`python -m training.empate` cierra la pregunta con el estadistico que corresponde. La
+accuracy no sirve para esto: un modelo que **nunca** predice empate puede tener buena
+accuracy y no saber absolutamente nada del empate. La pregunta correcta es si pone mas
+probabilidad de empate donde efectivamente lo hubo, y eso lo mide el **AUC uno-contra-resto**,
+que ademas no depende del umbral.
+
+| modelo | AUC away | **AUC draw** | AUC home | IC95 del draw |
+|---|---|---|---|---|
+| `xgb_gbt` | 0,680 | **0,515** | 0,683 | [0,441 – 0,584] |
+| `poisson` | 0,648 | **0,479** | 0,655 | [0,412 – 0,543] |
+| `ordinal` | 0,606 | **0,493** | 0,648 | [0,431 – 0,559] |
+| `marcador` | 0,641 | **0,460** | 0,659 | [0,392 – 0,525] |
+| mercado | 0,674 | **0,531** | 0,697 | [0,465 – 0,592] |
+
+**Cuatro familias de modelos distintas, las cuatro en 0,5.** Y el 0,5 esta dentro del IC en
+todas: no hay discriminacion demostrable. Por deciles de `p_draw` se ve igual de crudo: el
+decil mas bajo tuvo 39,5 % de empates y el mas alto, 39,5 %.
+
+### La trampa del F1
+
+| modelo | F1 del empate | empates predichos | AUC del empate |
+|---|---|---|---|
+| `ordinal` | **0,209** | 68 | 0,493 |
+| `marcador` | 0,098 | 19 | 0,460 |
+| `xgb_gbt` | 0,056 | 4 | 0,515 |
+
+**El mejor F1 del empate viene con el AUC mas cerca de 0,5.** Sube por predecir mas empates,
+no por acertarlos. Optimizar F1 del empate premia adivinar mas seguido — sin el AUC al lado,
+ese numero miente.
+
+### Y no es que el modelo sea malo: el empate es asi
+
+Sobre las 1.530 filas con cuotas de las cinco temporadas, el **mercado** —casas de apuestas
+con plata de verdad— saca:
+
+| | AUC |
+|---|---|
+| empate | **0,563** [0,530 – 0,595] |
+| local | 0,733 |
+| visita | 0,735 |
+
+Tiene señal, pero es minuscula, y **hace falta n=1.530 para demostrar que existe**. Con los
+380 partidos del holdout, nuestro 0,515 es indistinguible de ese 0,563. **El techo es el
+tamaño de la muestra, no el algoritmo.**
+
+### La unica palanca real: el umbral
+
+| umbral | empates predichos | precision | recall | F1 | accuracy global |
+|---|---|---|---|---|---|
+| argmax | 4 | 0,750 | 0,029 | 0,056 | 0,5000 |
+| 0,32 | 16 | 0,500 | 0,077 | 0,133 | 0,5000 |
+| **0,30** | **36** | **0,417** | **0,144** | **0,214** | **0,5079** |
+| 0,26 | 103 | 0,301 | 0,298 | 0,300 | 0,4711 |
+| 0,20 | 278 | 0,259 | 0,692 | 0,377 | 0,3342 |
+
+No es una decision de modelado sino **de negocio**: cuanto cuesta perderse un empate contra
+cuanto cuesta anunciar uno que no fue. A 0,30 se recuperan 36 empates sin costo de accuracy
+— pero ojo, con AUC 0,515 eso es afinar un umbral sobre una señal que no ordena.
+
+---
+
+## Dixon-Coles: la correccion que aca no aplica
+
+Esa decorrelacion en el empate tiene causa. `PoissonBivariado` arma la distribucion conjunta
+multiplicando las dos marginales, o sea **asume independencia** entre los goles de los dos
+equipos. Es falso justo en los marcadores bajos, que es donde vive el empate.
+
+La correccion clasica es **Dixon-Coles (1997)**: un parametro `rho` que reajusta cuatro
+celdas.
+
+```
+tau(0,0) = 1 - lam*mu*rho      tau(0,1) = 1 + lam*rho
+tau(1,0) = 1 + mu*rho          tau(1,1) = 1 - rho
+```
+
+Con `rho < 0` sube 0-0 y 1-1 y baja 1-0 y 0-1: sube P(empate). Se ajusta por maxima
+verosimilitud, y como el termino de Poisson no depende de `rho`, se reduce a maximizar
+`sum(log tau)` — una optimizacion de una sola variable sobre las filas que terminaron con
+alguno de esos cuatro marcadores.
+
+**Esta implementado (`dixon_coles=True`, y `poisson_dc` en la grilla) y no aporta.** El
+diagnostico de celdas explica exactamente por que, sobre las 1.004 filas de train:
+
+| celda | observado | esperado bajo independencia | obs/esp |
+|---|---|---|---|
+| 0-0 | 38 | 57,0 | **0,666** |
+| 0-1 | 61 | 72,4 | 0,843 |
+| 1-0 | 84 | 82,7 | 1,016 |
+| 1-1 | 107 | 98,4 | **1,087** |
+| empates (todos) | 228 | 217,8 | 1,047 |
+
+**0-0 aparece de menos y 1-1 de mas.** Las dos celdas del empate se desvian en direcciones
+**opuestas**, y la `tau` tiene **un solo parametro**, que las empuja a las dos en la misma
+direccion. No existe un `rho` capaz de bajar una y subir la otra: la maxima verosimilitud se
+queda en **rho = -0,0074**, contra el -0,13 que Dixon y Coles reportan para el futbol ingles.
+
+El efecto medido es nulo. En la grilla, `poisson_dc` da **exactamente la misma accuracy y el
+mismo F1** que `poisson` en las tres variantes de datos; el log-loss mejora entre 0,0003 y
+0,0024.
+
+| | Accuracy | F1 macro | Log-loss |
+|---|---|---|---|
+| `poisson` (sin_xg_falso) | 0,4921 | 0,3644 | 1,0455 |
+| `poisson_dc` (sin_xg_falso) | 0,4921 | 0,3644 | 1,0452 |
+
+**Lo que sigue siendo cierto** es que el modelo subestima el empate: los observados superan a
+los esperados en un 4,7 %. El deficit existe; lo que no existe es que tenga *la forma* que
+Dixon-Coles corrige. Se conserva el codigo, apagado por defecto, porque el resultado negativo
+senala hacia donde habria que ir si se retomara: una correccion con mas de un parametro, o
+calibrar el empate directamente.
 
 ---
 

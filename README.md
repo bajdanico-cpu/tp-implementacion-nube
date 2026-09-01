@@ -86,8 +86,10 @@ python -m training.run --sin-holdout                       # el modelo que se RE
 python -m training.run                                     # el que SIRVE (incluye 2025-26)
 python -m training.run --model xgb_gbt --walk-forward      # 38 folds, simula el ciclo
 python -m training.ablacion                                # cuanto aporta cada bloque
+python -m training.ensamble                                # el clasificador vs el modelo de goles
+python -m training.empate                                  # por que ningun modelo predice el empate
 python -m training.benchmark_gpu                           # CPU vs GPU con barrido de escala
-python -m training.compare_models                          # grilla 7 modelos x 3 variantes
+python -m training.compare_models                          # grilla 8 modelos x 3 variantes
 python -m training.analysis                                # donde le gana a cada vara
 python -m training.reproducir                              # que hace falta para rehacer uno
 

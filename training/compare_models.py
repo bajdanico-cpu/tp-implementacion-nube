@@ -35,7 +35,8 @@ log = get_logger(__name__)
 
 SALIDA = PROJECT_ROOT / "training" / "output"
 
-MODELOS = ("xgb_gbt", "xgb_rf", "hgb", "logreg", "poisson", "ordinal", "mlp")
+MODELOS = ("xgb_gbt", "xgb_rf", "hgb", "logreg", "poisson", "poisson_dc",
+           "ordinal", "mlp")
 
 VARIANTES_DATOS = {
     # nombre -> filtro sobre las filas de entrenamiento (None = todas)
@@ -51,18 +52,22 @@ def _fit_predict(nombre: str, info, tr: pd.DataFrame, va: pd.DataFrame,
 
     Protocolo común a todos: donde hay early stopping se usa la temporada de validación
     para fijar las rondas, después se refitea con train + validación, y se promedian
-    semillas. Los que no lo soportan (logreg, ordinal, mlp, poisson) se ajustan directo
-    sobre train + validación.
+    semillas. Los que no lo soportan (logreg, ordinal, mlp y los dos
+    poisson) se ajustan directo sobre train + validación.
     """
     full = pd.concat([tr, va])
     X_tr, y_tr = dataset.matriz(tr, features), dataset.codificar(tr["target_1x2"])
     X_va, y_va = dataset.matriz(va, features), dataset.codificar(va["target_1x2"])
     X_f, y_f = dataset.matriz(full, features), dataset.codificar(full["target_1x2"])
 
-    if nombre == "poisson":
+    if nombre in ("poisson", "poisson_dc"):
+        # `poisson_dc` es el mismo modelo con la correccion de Dixon-Coles, que levanta la
+        # suposicion de independencia en los marcadores bajos. Van los dos a la grilla
+        # para que la comparacion sea contra si mismo y no contra otra familia.
         probas = []
         for i in range(n_seeds):
-            m = ma.PoissonBivariado(device=info.used, seed=CFG.seed + i)
+            m = ma.PoissonBivariado(device=info.used, seed=CFG.seed + i,
+                                    dixon_coles=(nombre == "poisson_dc"))
             m.fit(X_f, full["home_goals"].to_numpy(), full["away_goals"].to_numpy())
             probas.append(m.predict_proba(Xte))
         return ma.ensamble(probas)
