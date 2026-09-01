@@ -6,6 +6,8 @@ artefactos persistidos en un bucket de GCS:
 - [`notebooks/01_gcp_cloudshell.ipynb`](../notebooks/01_gcp_cloudshell.ipynb) — el lab: se
   clona el repo, se corre celda por celda, cada paso deja un recurso visible en la consola,
   y **la última celda borra todo** para no dejar nada facturando.
+- [`gcp/paso-a-paso.md`](../gcp/paso-a-paso.md) — el recorrido completo desde crear el
+  proyecto en GCP, para alguien que arranca de cero.
 - [`gcp/runbook.md`](../gcp/runbook.md) — los mismos pasos por terminal, con los chequeos
   de limpieza.
 

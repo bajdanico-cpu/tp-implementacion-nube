@@ -9,6 +9,9 @@ Comandos parametrizados para correr el pipeline en Google Cloud. Está escrito p
 > editor **no hereda el entorno de la sesión** y `gcloud` desde ahí queda sin proyecto ni
 > auth. Los comandos de este runbook son para la terminal.
 
+> **¿Primera vez?** Empezá por [`paso-a-paso.md`](paso-a-paso.md), que va desde crear el
+> proyecto en GCP hasta apagar todo. Este runbook asume el proyecto ya creado.
+
 **Alcance.** Hasta la predicción de una fecha, corriendo como batch, con su registro en el
 bucket. No se despliega nada: no hay servicio, ni imagen, ni job programado. Eso es la etapa
 siguiente y todavía no está.
@@ -110,6 +113,55 @@ Verificado el 30/08/2026, con la fecha 2 en juego (8 de 10 partidos con marcador
 La fecha 1 entra como historia de la fecha 2 —que es lo correcto— y la fecha 2 no entra en
 absoluto. **La prueba que convence:** si la GW1 filtrara su propio resultado acertaría 10 de
 10; acierta 4.
+
+---
+
+## Opcional — AutoML de Vertex, como contrafáctico
+
+Le das la tabla, la columna a predecir y la métrica, y Google prueba modelos solo. Es el
+contrafáctico honesto de todo `training/`: si una herramienta automática saca lo mismo en
+dos horas sin que nadie piense, hay que decirlo; y si no lo saca, también.
+
+```bash
+pip install --user "google-cloud-aiplatform>=1.70,<2"
+gcloud services enable aiplatform.googleapis.com
+
+python -m training.automl --export --subir --bucket "${BUCKET}"
+```
+
+Después, **en la consola**: *Vertex AI → Conjuntos de datos → Crear → Tabular*, importando
+`gs://${BUCKET}/automl/gold_automl.csv`. Anotá el ID del dataset.
+
+```bash
+python -m training.automl --entrenar --dataset-id <ID> --bucket "${BUCKET}"
+# ~2 h server-side; no depende de que Cloud Shell siga abierta
+python -m training.automl --metricas --model-id <ID>
+```
+
+⚠️ **La línea que hace que esto signifique algo** es `predefined_split_column_name`. AutoML
+parte el dataset **al azar** por defecto, y para este problema eso es fatal: pondría partidos
+de mayo en train y de agosto en test, el modelo vería el futuro y saldría un número altísimo
+que no vale nada. El export construye la columna `ml_use` con **exactamente** nuestra
+partición temporal:
+
+```
+2022-23, 2023-24  -> TRAIN       760 filas
+2024-25           -> VALIDATE    380     (la de early stopping, igual que nosotros)
+2025-26           -> TEST        380     (el holdout, los mismos partidos)
+```
+
+Y se le dan **exactamente nuestras 279 features**: ni fechas, ni ids, ni marcadores, ni
+cuotas. Si recibiera `home_goals` ganaría con trampa; si recibiera las cuotas, la comparación
+dejaría de ser contra un modelo que no las usa. Misma tabla, mismo split, mismo holdout: la
+única diferencia es quién eligió el modelo.
+
+La métrica es `minimize-log-loss` —tres clases, y lo que importa es la calidad de la
+probabilidad— y no `maximize-au-roc`, que es lo que usa el caso guía de churn porque ahí el
+problema es binario.
+
+**Costo:** mínimo 1 node-hour de presupuesto, ~2 horas de reloj, consume crédito. El modelo
+queda en el Model Registry **sin desplegar**, que no factura por hora. Desplegarlo en un
+endpoint sí: eso no lo hace este módulo.
 
 ---
 

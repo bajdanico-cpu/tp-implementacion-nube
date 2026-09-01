@@ -316,7 +316,10 @@ nube: se clona el repo en Cloud Shell, se corre celda por celda, y cada paso dej
 visible en la consola. Llega hasta la **predicción de una fecha registrada en el bucket**,
 con la verificación de que no hay leakage temporal, y **la última celda borra todo** para no
 dejar nada facturando. Usa `requirements-cloud.txt`
-(Cloud Shell no tiene Python 3.14). Los comandos por terminal están en
+(Cloud Shell no tiene Python 3.14).
+
+**Para correrlo desde cero**, incluido crear el proyecto en GCP:
+[`gcp/paso-a-paso.md`](gcp/paso-a-paso.md). Los comandos equivalentes por terminal están en
 [`gcp/runbook.md`](gcp/runbook.md).
 
 ### Lo que el modelo NO logra, dicho sin maquillar

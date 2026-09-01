@@ -63,7 +63,9 @@ riesgo real de correrlo mientras se está jugando una fecha.
 tiene los dos chequeos que faltan (que no haya servicios ni endpoints, y apagar la API).
 Lo que se prende, se paga.
 
-Los comandos equivalentes por terminal están en [`gcp/runbook.md`](../gcp/runbook.md).
+El paso a paso completo —desde crear el proyecto en GCP— está en
+[`gcp/paso-a-paso.md`](../gcp/paso-a-paso.md); los comandos por terminal, en
+[`gcp/runbook.md`](../gcp/runbook.md).
 
 > **`requirements-cloud.txt` y no `requirements.txt`.** El de local está pinneado a wheels
 > `cp314` (Python 3.14.3) y Cloud Shell trae otro Python: pip intentaría compilar numpy y

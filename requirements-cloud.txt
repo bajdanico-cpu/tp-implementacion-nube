@@ -40,3 +40,12 @@ uvicorn[standard]>=0.30,<1
 
 # --- GCP ---
 google-cloud-storage>=2.18
+
+# --- AutoML (OPCIONAL) ---
+# Solo hace falta para `python -m training.automl --entrenar|--metricas`. Se deja
+# comentado porque son ~100 MB de dependencias que el lab no necesita, y porque el
+# AutoML consume credito: no se lanza sin querer.
+#
+#   pip install --user "google-cloud-aiplatform>=1.70,<2"
+#
+# google-cloud-aiplatform>=1.70,<2
