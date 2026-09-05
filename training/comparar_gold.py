@@ -58,11 +58,11 @@ TABLA = "gold_tp_match"
 # Los subgrupos donde vive la hipotesis de cada fase. Se calculan sobre las filas del
 # holdout, con columnas que ya estan en Gold.
 SUBGRUPOS = {
-    "ascendidos": lambda d: d["local_es_ascendido"].fillna(0).astype(bool)
-                            | d["visita_es_ascendido"].fillna(0).astype(bool),
+    "ascendidos": lambda d: d["local_es_ascendido"].fillna(False).astype(bool)
+                            | d["visita_es_ascendido"].fillna(False).astype(bool),
     "arranque": lambda d: d["gameweek"] <= 5,
-    "resto": lambda d: ~(d["local_es_ascendido"].fillna(0).astype(bool)
-                         | d["visita_es_ascendido"].fillna(0).astype(bool))
+    "resto": lambda d: ~(d["local_es_ascendido"].fillna(False).astype(bool)
+                         | d["visita_es_ascendido"].fillna(False).astype(bool))
                        & (d["gameweek"] > 5),
 }
 

@@ -76,6 +76,68 @@ Y `xgb_rf` **iguala o supera la accuracy del mercado (0,505 vs 0,495) sin usar c
 que era la comparación honesta. En log-loss el mercado sigue adelante (1,012 vs 1,029):
 está mejor calibrado, aunque acierte menos veces el argmax.
 
+## El problema de los ascendidos, medido en serio
+
+Se venia citando como "el fallo de la GW1 de 2026-27": los dos errores mas caros fueron
+ascendidos ganando de local (HUL-MUN, IPS-SUN). Eso son **dos partidos**. Medido sobre los
+108 partidos con ascendido del holdout 2025-26, con el modelo de produccion promediando
+cinco semillas:
+
+| | ascendidos (108) | resto (272) |
+|---|---|---|
+| **modelo** | **0,4074** | 0,4853 |
+| mercado | **0,5000** | 0,4926 |
+| prior de clase | 0,4259 | 0,4265 |
+| siempre local | 0,4259 | 0,4265 |
+| RPS modelo | 0,2212 | 0,2221 |
+| RPS mercado | **0,1884** | 0,2109 |
+
+**El modelo pierde contra el baseline trivial en ese subgrupo** (0,407 contra 0,426), y el
+mercado hace ahi su **mejor** RPS de todo el holdout. O sea: no es que esos partidos sean
+menos predecibles — el mercado les saca mas jugo que al resto. La brecha contra el mercado
+es de **9,3 puntos** en ascendidos contra **0,7** en el resto.
+
+### Pero la mitad del agujero es otra cosa
+
+Descomponiendo los 64 errores del subgrupo: **34 eran empates** (53 %). Y restringiendo a
+partidos con ganador la brecha se achica de 7,8 a 5,6 puntos:
+
+| | accuracy | solo partidos con ganador |
+|---|---|---|
+| ascendidos | 0,407 | 0,589 (n=73) |
+| resto | 0,485 | 0,645 (n=203) |
+
+Con n=73 el error estandar ronda 5,8 puntos, asi que esos 5,6 puntos que quedan son **un
+error estandar**. No es un resultado, es una sospecha.
+
+### Y el "exceso de empates de los ascendidos" NO existe
+
+En 2025-26 el subgrupo empato el 32,4 % de las veces contra 25,4 % del resto, y es tentador
+leer ahi una regularidad. No la hay: sobre las cuatro temporadas, **0,2401 contra 0,2403**,
+con p = 1,00.
+
+| temporada | draw en ascendidos | draw en el resto |
+|---|---|---|
+| 2023-24 | 0,213 | 0,217 |
+| 2024-25 | 0,194 | 0,265 |
+| 2025-26 | **0,324** | 0,254 |
+
+Lo que si es estable entre temporadas —y es modesto— es que los ascendidos ganan menos de
+local (0,420 contra 0,453) y pierden mas de visitante (0,340 contra 0,307).
+
+### Entonces, ¿que queda del "problema de los ascendidos"?
+
+Una sola cosa, pero solida: **el mercado extrae de esos partidos una señal que nosotros no**.
+Lo demas es el techo del empate apareciendo en un subgrupo que en 2025-26 empato mucho, mas
+ruido de muestra chica.
+
+Y hay una explicacion estructural para esa brecha que **no** se arregla con mejor modelado:
+un ascendido es el equipo con mayor rotacion de plantel de la liga, y casi todas nuestras
+features salen del historial de sus jugadores en Premier, que no existe. El mercado tiene
+altas, bajas, lesiones y precios de transferencia. Eso es informacion, no algoritmo.
+
+---
+
 ## Fase 1: sembrar el Elo con veinte años de historia. Medido, y NO entra
 
     python -m ingestion.bronze_fd_historia   # 81 archivos, E0/E1/E2 desde 2000-01
