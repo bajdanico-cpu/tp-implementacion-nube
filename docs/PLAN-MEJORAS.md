@@ -14,6 +14,58 @@ fija el protocolo y el criterio *antes*.
 
 ---
 
+## Regla cero: no se pisa nada, nunca
+
+**Ninguna fase puede destruir el estado anterior.** Ni una versión de Gold, ni una de
+Silver, ni un modelo. Si una fase sale mal, tiene que poder deshacerse entera.
+
+Hasta el 05/09/2026 esto **no estaba garantizado**. El inventario era:
+
+| | ¿se pisaba? |
+|---|---|
+| Bronze | no — append-only por `ingested_at=<stamp>` desde el día uno |
+| Modelos | no — cada corrida es `models/<modelo>/<stamp>/` |
+| Predicciones | no — cada una lleva su stamp en el nombre |
+| **Silver y Gold** | **sí — `write_table` escribía encima** |
+
+Y como `data/` está en `.gitignore` —tiene que estarlo, son 180 MB regenerables— para esas
+dos capas **no había red de git**. Una corrida distraída de `python -m features.gold_tp`
+destruía sin rastro el Gold con el que se entrenó el modelo que está sirviendo.
+
+Ahora `common.storage.archivar` aparta la versión vigente antes de cada escritura:
+
+    data/gold/gold_tp_match.parquet                      <- la vigente
+    data/_versiones/gold/gold_tp_match/<stamp>.parquet   <- todas las anteriores
+    data/_versiones/gold/gold_tp_match/<stamp>.json      <- qué era cada una
+
+El histórico vive **fuera** de `data/silver` y `data/gold` para que las carpetas de capa
+sigan teniendo exactamente una versión de cada tabla, y el lab de GCP suba sólo lo vigente.
+
+    python -m common.versiones                        # que hay guardado
+    python -m common.versiones --diff gold_tp_match   # que cambio entre versiones
+    python -m common.versiones --restaurar gold_tp_match <stamp>
+
+**Antes de cada fase**, la primera acción es etiquetar el estado del que se parte:
+
+    python -m common.versiones --snapshot "antes de fase N: <que se va a cambiar>"
+
+o, si la fase reconstruye Gold, dejar que lo haga el propio pipeline:
+
+    TP_VERSION_LABEL="fase N: pi-ratings" python -m features.gold_tp
+
+La etiqueta es lo que después permite contestar *"¿con qué Gold se entrenó el modelo
+`20260825T024144Z`?"* sin adivinar por fecha. Un parquet archivado sin etiqueta es un
+parquet más.
+
+> El estado previo a todas estas fases ya quedó congelado con la etiqueta
+> `"estado previo a las fases de mejora (commit 5398fd3)"`: las 6 tablas de Silver, el Gold
+> de 1.540 × 301 y el `prior_ascendidos.json` del modelo en producción.
+
+Y `--restaurar` tampoco destruye: archiva la versión que está viva antes de reemplazarla,
+así que ir y volver entre versiones es seguro.
+
+---
+
 ## El protocolo, por fase
 
 Cada fase se mide en tres bancos. Los tres, siempre, aunque el cambio "obviamente" funcione.
@@ -201,6 +253,14 @@ Pocos parámetros, interpretables, y se testean de a uno con `training/ablacion.
 
 ## Registro
 
-Cada fase cierra con: los tres bancos corridos, el resultado anotado —en `training/README.md`
-si entró, en `attempts.jsonl` si no— y **un commit**. La fase siguiente arranca del stack que
-quedó, no del que se esperaba que quedara.
+Cada fase:
+
+1. **Abre** con `--snapshot "antes de fase N: ..."` o con `TP_VERSION_LABEL` puesto. Regla
+   cero: el estado del que se parte queda etiquetado antes de tocar nada.
+2. Corre **los tres bancos**, con control de semillas.
+3. **Cierra** con el resultado anotado —en `training/README.md` si entró, en
+   `attempts.jsonl` si no— y **un commit**.
+
+La fase siguiente arranca del stack que quedó, no del que se esperaba que quedara. Y si una
+fase hay que deshacerla, `python -m common.versiones --restaurar` la deshace sin perder lo
+que se probó en el intento.

@@ -100,6 +100,11 @@ python -m monitoring.temporada_actual                      # metricas en vivo de
 python -m serving.decision                                 # reglas de decision en paralelo
 python -m training.decision_eval --walk-forward --semillas # cuanto mueve la regla, medido
 
+# 5 ter. Versionado de Silver y Gold — nada se pisa, nunca
+python -m common.versiones                                 # vigente + historico
+python -m common.versiones --snapshot "antes de X"         # congela lo vigente, con nombre
+python -m common.versiones --diff gold_tp_match            # que cambio entre versiones
+
 # 6. El notebook que recorre todo
 python notebooks/00_recorrido_completo.py                  # regenera el .ipynb
 jupyter lab notebooks/00_recorrido_completo.ipynb
@@ -205,6 +210,20 @@ Silver  (normalizado — granularidad jugador-fecha conservada)
 Bronze **nunca sobrescribe**. Cada corrida escribe en `ingested_at=<timestamp>`. El motivo no es
 prolijidad: el snapshot tomado *antes* del deadline es el único que refleja lo que se sabía al
 momento de predecir, y conservarlo junto al posterior es la defensa auditable contra el leakage.
+
+**Silver y Gold tampoco sobrescriben** (desde el 05/09/2026). `write_table` aparta la versión
+vigente antes de cada escritura:
+
+```
+data/gold/gold_tp_match.parquet                      ← la vigente
+data/_versiones/gold/gold_tp_match/<stamp>.parquet   ← todas las anteriores, con manifiesto
+```
+
+Importa porque `data/` está en `.gitignore` —tiene que estarlo, son 180 MB regenerables— así que
+para estas dos capas **no hay red de git**: antes, una corrida distraída de `features.gold_tp`
+destruía sin rastro el Gold con el que se entrenó el modelo que está sirviendo. El histórico vive
+*fuera* de las carpetas de capa para que Silver y Gold sigan teniendo una sola versión de cada
+tabla y el lab de GCP suba únicamente lo vigente. Ver `python -m common.versiones`.
 
 La capa `common/storage.py` abstrae el I/O. Hoy el backend es `local` (parquet); pasar a GCS o
 BigQuery es implementar un backend y cambiar una línea en `config.yaml`. La lógica de negocio no

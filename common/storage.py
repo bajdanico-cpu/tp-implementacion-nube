@@ -236,12 +236,129 @@ def read_manifest(source: str, season: str, dataset: str) -> dict[str, Any] | No
     return json.loads(raw) if raw else None
 
 
+# --------------------------------------------------------------------------- #
+#  Versionado de Silver y Gold: nunca se pisa nada
+# --------------------------------------------------------------------------- #
+#
+# Bronze es append-only desde el primer día (`ingested_at=<stamp>`) y los modelos están
+# versionados por timestamp. Silver y Gold **no lo estaban**: `write_table` escribía
+# `data/gold/gold_tp_match.parquet` encima del anterior. Como `data/` está en .gitignore,
+# eso significaba que una corrida de `python -m features.gold_tp` destruía sin rastro el
+# Gold con el que se entrenó el modelo que está en producción.
+#
+# Ahora, antes de escribir, la versión vigente se aparta:
+#
+#     data/gold/gold_tp_match.parquet                          <- la vigente
+#     data/_versiones/gold/gold_tp_match/<stamp>.parquet       <- las anteriores
+#     data/_versiones/gold/gold_tp_match/<stamp>.json          <- que era cada una
+#
+# El histórico vive FUERA de `data/silver` y `data/gold` a propósito: así las carpetas de
+# capa siguen conteniendo exactamente una versión de cada tabla, y el lab de GCP sube lo
+# vigente sin arrastrar el archivo histórico.
+#
+# El `stamp` sale del mtime del archivo que se aparta, no de "ahora": es cuándo se creó esa
+# versión, que es el dato que sirve para cruzarla con el `built_at` de un modelo.
+
+VERSIONES = "_versiones"
+ETIQUETA_ENV = "TP_VERSION_LABEL"
+
+
+def versiones_root(layer: str, name: str | None = None) -> Path:
+    """Dónde vive el histórico de una capa (y opcionalmente de una tabla)."""
+    root = CFG.data_root / VERSIONES / layer
+    return root / name if name else root
+
+
+def _forma_parquet(data: bytes) -> tuple[int | None, int | None]:
+    """Filas y columnas de un parquet, leídas del footer. No materializa la tabla."""
+    try:
+        import io as _io
+
+        import pyarrow.parquet as pq
+
+        md = pq.ParquetFile(_io.BytesIO(data)).metadata
+        return md.num_rows, md.num_columns
+    except Exception:  # noqa: BLE001 — no es parquet, o no se puede leer: no es un error
+        return None, None
+
+
+def versiones(layer: str, name: str) -> list[dict[str, Any]]:
+    """Los manifiestos de las versiones archivadas de una tabla, de vieja a nueva."""
+    carpeta = versiones_root(layer, name)
+    if not carpeta.exists():
+        return []
+    out = []
+    for m in sorted(carpeta.glob("*.json")):
+        try:
+            out.append(json.loads(m.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            log.warning("manifiesto ilegible: %s", m)
+    return out
+
+
+def archivar(path: Path, layer: str, etiqueta: str | None = None) -> Path | None:
+    """Aparta la versión vigente de `path` antes de que algo la pise.
+
+    Devuelve la ruta donde quedó archivada, o `None` si no había nada que archivar o si
+    ese mismo contenido ya está guardado.
+
+    **Deduplica por contenido.** Si el archivo vigente es idéntico (mismo sha256) a alguna
+    versión ya archivada, no se guarda de nuevo: reconstruir Gold sin cambiar nada no
+    ensucia el histórico. Como mucho se archiva una versión redundante por corrida, que es
+    el precio de no perder nada — y es el lado correcto del que equivocarse.
+    """
+    if not BACKEND.exists(path):
+        return None
+
+    data = BACKEND.read_bytes(path)
+    h = sha256(data)
+    nombre = path.stem
+
+    if any(v.get("sha256") == h for v in versiones(layer, nombre)):
+        log.debug("%s.%s ya estaba archivado con este contenido", layer, nombre)
+        return None
+
+    # El stamp es cuándo se creó ESA version, no ahora.
+    from datetime import datetime, timezone
+
+    try:
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    except OSError:
+        mtime = datetime.now(timezone.utc)
+    stamp = mtime.strftime("%Y%m%dT%H%M%SZ")
+
+    destino = versiones_root(layer, nombre) / f"{stamp}{path.suffix}"
+    if BACKEND.exists(destino):                       # dos versiones en el mismo segundo
+        stamp = f"{stamp}_{h[:8]}"
+        destino = versiones_root(layer, nombre) / f"{stamp}{path.suffix}"
+    BACKEND.write_bytes(destino, data)
+
+    import os
+
+    filas, columnas = _forma_parquet(data)
+    manifiesto = {
+        "tabla": nombre, "layer": layer, "stamp": stamp,
+        "archivo": destino.name,
+        "creada_at": mtime.isoformat(timespec="seconds"),
+        "archivada_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "bytes": len(data), "sha256": h,
+        "filas": filas, "columnas": columnas,
+        "etiqueta": etiqueta or os.getenv(ETIQUETA_ENV) or "",
+    }
+    BACKEND.write_bytes(destino.with_suffix(".json"),
+                        json.dumps(manifiesto, indent=2, ensure_ascii=False).encode("utf-8"))
+    log.info("%s.%s: version anterior archivada en %s (%s filas)",
+             layer, nombre, destino.name, f"{filas:,}" if filas else "?")
+    return destino
+
+
 def write_table(df: pd.DataFrame, name: str, layer: str = "silver") -> Path:
-    """Persiste una tabla de Silver o Gold."""
+    """Persiste una tabla de Silver o Gold, **apartando antes la versión vigente**."""
     root = {"silver": CFG.silver_root, "gold": CFG.gold_root}.get(layer)
     if root is None:
         raise ValueError(f"layer='{layer}' inválido; usar 'silver' o 'gold'")
     path = root / f"{name}.parquet"
+    archivar(path, layer)
     BACKEND.write_dataframe(df, path)
     log.info("%s.%s <- %s filas x %s cols", layer, name, f"{len(df):,}", len(df.columns))
     return path

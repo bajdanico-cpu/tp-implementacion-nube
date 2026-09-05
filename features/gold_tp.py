@@ -19,7 +19,7 @@ import pandas as pd
 
 from common.config import CFG, PROJECT_ROOT, utc_stamp
 from common.logging_setup import get_logger, setup
-from common.storage import read_table, write_table
+from common.storage import archivar, read_table, write_table
 from eda.baselines import odds_a_probabilidades
 from features import (cold_start, competencias as fcomp, elo, h2h,
                       opta as fopta, player_agg, spec, team_form as tf)
@@ -385,6 +385,10 @@ def run(escribir: bool = True) -> pd.DataFrame:
         prior = gold.attrs.get("prior_ascendidos", {})
         if prior:
             pj = CFG.gold_root / "prior_ascendidos.json"
+            # Se aparta la version vigente antes de pisarla, igual que las tablas: este
+            # json es el prior CONGELADO con el que se entreno el modelo que esta
+            # sirviendo, asi que perderlo es perder la reproducibilidad de ese modelo.
+            archivar(pj, "gold")
             pj.write_text(json.dumps(prior, indent=2), encoding="utf-8")
             log.info("Prior de ascendidos congelado en %s", pj)
     return gold

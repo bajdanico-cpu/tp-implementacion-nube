@@ -231,6 +231,10 @@ def subir(carpeta_local, prefijo):
     for f in sorted(base.rglob("*")):
         if not f.is_file():
             continue
+        # `data/_versiones` es el historico local de Silver y Gold: existe para no perder
+        # nada en la PC, no para llenar el bucket. Al lab le va la version VIGENTE.
+        if "_versiones" in f.parts:
+            continue
         bucket.blob(f"{prefijo}/{f.relative_to(base).as_posix()}").upload_from_filename(f)
         n += 1
         mb += f.stat().st_size / 1e6
