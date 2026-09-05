@@ -352,6 +352,14 @@ ESTADO_POR_LADO = (
                     "confiabilidad de la prediccion. No usa las predicciones del modelo "
                     "-- eso seria un bucle de realimentacion -- sino la expectativa del "
                     "Elo, que sale solo de resultados pasados"),
+    ("af_ataque", "rating de ATAQUE (familia Berrar): cuanto genera el equipo por encima "
+                  "del promedio de la liga, en escala log. Se aprende del error en los "
+                  "goles predichos, no del resultado"),
+    ("af_defensa", "rating de DEFENSA: cuanto concede por debajo del promedio. Que sean dos "
+                   "numeros y no uno es toda la idea -- `elo` colapsa las dos cosas en un "
+                   "escalar y un 1-0 y un 4-3 le mueven el rating parecido. Medido, "
+                   "correlacionan 0,708 entre si: comparten mucho, pero la mitad de la "
+                   "varianza es propia"),
     ("pi_home", "pi-rating del equipo JUGANDO DE LOCAL, despues de su ultimo partido "
                 "antes del corte (Constantinou & Fenton 2013). Se aprende de la diferencia "
                 "de goles, no del resultado: ganar 1-0 al que ibas a golear baja el rating"),
@@ -372,7 +380,8 @@ def _estado() -> list[Feature]:
     return [Feature(nombre=f"{lado}_{n}", grupo="Elo y estado", fuente="derivada",
                     formula=f, lado=lado)
             for lado in LADOS for n, f in ESTADO_POR_LADO
-            if CFG.pi_activo or n not in PI_POR_LADO]
+            if (CFG.pi_activo or n not in PI_POR_LADO)
+            and (CFG.af_activo or n not in AF_POR_LADO)]
 
 
 COMPETENCIAS_POR_LADO = (
@@ -466,6 +475,8 @@ DIFERENCIALES = (
     "prop_tiros_area_u5", "posesion_u5", "quites_u5", "pi_ventaja",
     # Fase 5: la resta es lo que el modelo realmente usa -- quien tiene mas plantel.
     "valor_rel", "valor_top11", "valor_def", "valor_del",
+    # Fase 3: quien ataca mas y quien defiende mejor, explicito.
+    "af_ataque", "af_defensa",
 )
 
 
@@ -473,6 +484,9 @@ DIFERENCIALES = (
 # asi el `FEATURE_SET_VERSION` vuelve exactamente al del modelo en produccion en vez de
 # quedar en un tercer estado que no corresponde a ningun modelo guardado.
 PI_POR_LADO = {"pi_home", "pi_away", "pi_ventaja"}
+
+# Fase 3.
+AF_POR_LADO = {"af_ataque", "af_defensa"}
 
 # Fase 5. Mismo tratamiento: se apagan enteras con `features.valores_activo`.
 VALORES_POR_LADO = {"valor_plantel", "valor_top11", "valor_rel", "valor_n",
@@ -499,6 +513,29 @@ VALORES_DESC = (
     ("valor_med", "valor de los mediocampistas"),
     ("valor_del", "valor de los delanteros"),
 )
+
+
+def _af_partido() -> list[Feature]:
+    """Fase 3: los goles esperados del partido. El `dif_` automatico no puede cruzar el
+    ataque de uno con la defensa del otro."""
+    if not CFG.af_activo:
+        return []
+    return [
+        Feature("af_lambda_local", "Estado", "derivada",
+                "goles esperados del local: exp(mu + local_af_ataque - visita_af_defensa "
+                "+ ventaja). Es la prediccion del sistema, con la forma de Poisson con la "
+                "que se modelan goles desde Maher (1982)"),
+        Feature("af_lambda_visita", "Estado", "derivada", "lo mismo para el visitante"),
+        Feature("af_lambda_dif", "Estado", "derivada",
+                "diferencia de goles esperada. Ajustado sobre train da deviance 1,1436 "
+                "contra 1,2464 de predecir siempre el promedio"),
+        Feature("af_lambda_total", "Estado", "derivada",
+                "goles esperados del PARTIDO, los dos lados sumados. Es la primera feature "
+                "del proyecto que apunta directo al empate: un partido de pocos goles "
+                "esperados empata mas que uno de muchos, y eso NO es lo mismo que 'son "
+                "parejos' -- que es lo que `dif_elo` cerca de cero ya decia. Dos equipos "
+                "parejos y goleadores empatan menos que dos parejos y aburridos"),
+    ]
 
 
 def _estilos() -> list[Feature]:
@@ -551,7 +588,8 @@ def diferenciales_activos() -> list[str]:
     """
     return [c for c in DIFERENCIALES
             if (CFG.pi_activo or c not in PI_POR_LADO)
-            and (CFG.valores_activo or c not in VALORES_POR_LADO)]
+            and (CFG.valores_activo or c not in VALORES_POR_LADO)
+            and (CFG.af_activo or c not in AF_POR_LADO)]
 
 
 def _diferenciales() -> list[Feature]:
@@ -568,7 +606,7 @@ def _build() -> list[Feature]:
     out: list[Feature] = []
     for fn in (_forma, _forma_temp, _forma_cond, _campeonato, _h2h,
                _continuidad, _estado, _competencias, _opta, _contexto, _dificultad,
-               _valores, _estilos, _pi_partido, _diferenciales):
+               _valores, _estilos, _af_partido, _pi_partido, _diferenciales):
         out.extend(fn())
     nombres = [f.nombre for f in out]
     dupes = {n for n in nombres if nombres.count(n) > 1}

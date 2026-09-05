@@ -76,6 +76,122 @@ Y `xgb_rf` **iguala o supera la accuracy del mercado (0,505 vs 0,495) sin usar c
 que era la comparación honesta. En log-loss el mercado sigue adelante (1,012 vs 1,029):
 está mejor calibrado, aunque acierte menos veces el argmax.
 
+## Las cinco fases de mejora: construidas, medidas, y las cinco rechazadas
+
+Entre el 05/09/2026 se corrio el plan entero de `docs/PLAN-MEJORAS.md`. **Cinco hipotesis
+razonables, cinco implementaciones completas con tests, cinco rechazos** — y lo que vale es
+que cada uno tiene una razon distinta y verificada, no un "no funciono".
+
+| fase | delta RPS (Banco A) | por que no |
+|---|---|---|
+| **1** historia profunda | +0,0010 ± 0,0011 | el 1500 de un ascendido era *shrinkage*; el rating del Championship lo reemplaza por una creencia confiada y mal calibrada. **AUC en ascendidos 0,696 → 0,662** |
+| **2** pi-ratings | +0,0002 ± 0,0013 | la ventaja de localia **por equipo no persiste**: r=0,093 entre mitades, contra 0,746 del nivel |
+| **3** ataque/defensa | +0,0002 ± 0,0013 | `af_lambda_dif` correlaciona **0,958 con `dif_elo`**: es el Elo recalculado |
+| **4** matchups | +0,0003 ± 0,0011 | **ortogonales** (0,013 con `dif_posesion`) pero el modelo **no las usa** (2,6 % de la ganancia) |
+| **5** valor de plantel | +0,0003 ± 0,0010 | **muy usadas** (8,4 %, sexta de 274) pero **redundantes**: 0,73 con `dif_elo` |
+
+Las fases 4 y 5 son el par que cierra el argumento: **informacion nueva sin señal** en una,
+**informacion repetida** en la otra. No hay una tercera opcion que no se haya probado.
+
+Ninguna paso el criterio pre-registrado, y ninguna estuvo cerca salvo la 4 — que mejoro la
+accuracy en las tres semillas del Banco B y fallo en la metrica primaria. Que ese caso se
+haya rechazado igual es el argumento mas fuerte a favor de fijar el criterio antes: **si la
+primaria hubiera sido accuracy, hoy estariamos festejando un +0,0079 que el Banco A no
+respalda.**
+
+### Lo que el conjunto dice, y es el hallazgo real
+
+**El modelo ya extrae lo que hay, y la restriccion que manda es n=1.140.** Cinco intentos
+independientes de agregar informacion —dos ratings alternativos, veinte años de historia,
+valores de mercado reales y siete interacciones de estilo— y ninguno mueve la aguja mas alla
+del ruido de semilla.
+
+Es coherente con la vara externa: el ganador de la Soccer Prediction Challenge 2017 saco
+**0,5049 de accuracy con 216.743 partidos de entrenamiento**; este modelo saca 0,4974 con
+1.140. Y la edicion 2023 la gano **el consenso de las casas de apuestas**, no un modelo.
+
+Para el TP eso no es un fracaso: es el resultado. Cinco hipotesis medidas con un protocolo
+escrito de antemano, todas reversibles, todas registradas en `attempts.jsonl` — un pipeline
+que sabe decir que no cinco veces seguidas y volver al estado anterior byte a byte.
+
+---
+
+## Fase 3: ratings de ataque y defensa. Es el Elo recalculado
+
+    python -m features.ataque_defensa --ajustar
+
+**La hipotesis.** `elo` colapsa todo en un escalar: un 1-0 y un 4-3 le mueven el rating
+parecido si el margen es parecido, y son equipos distintos. La familia Berrar —la que gano la
+Soccer Prediction Challenge 2017— le da a cada equipo **dos** ratings y predice los goles de
+cada lado con forma de Poisson:
+
+    lambda_local = exp(mu + ataque_local - defensa_visita + ventaja)
+
+`k` y la ventaja se ajustaron sobre train por deviance de Poisson: **1,1436 contra 1,2464**
+de predecir siempre el promedio, un 8,2 % mejor, con el optimo interior a las dos grillas.
+O sea que como sistema de goles **funciona**.
+
+### La precondicion del plan salio al reves
+
+`docs/PLAN-MEJORAS.md` pedia medir antes si los puntos de FPL por linea eran redundantes,
+esperando que el mediocampo fuera la dimension propia. Medido contra lo que ya existe:
+
+| linea | maxima correlacion con lo que ya habia |
+|---|---|
+| `pts_arq_u5` | 0,730 (con `tasa_atajadas_u5`) |
+| `pts_def_u5` | 0,759 (con `gc_u5`) |
+| **`pts_med_u5`** | **0,755** (con `gf_u5`) |
+| `pts_del_u5` | **0,383** |
+
+El mediocampo es **el mas redundante**, no el menos, y los delanteros los unicos con
+correlacion baja. Se descarto la variante por linea desde FPL y se fue a la publicada, que
+aprende de goles.
+
+### El resultado
+
+| | delta RPS | delta accuracy |
+|---|---|---|
+| **Banco A** (5 semillas) | **+0,0002** ± 0,0013, rango [−0,0012, +0,0022] | −0,0032 ± 0,0092 |
+| **Banco B** (3 semillas) | **+0,0006** | +0,0026 |
+
+Subgrupos: ascendidos 0,4796 → 0,4704; arranque 0,5320 → 0,5200; resto 0,4958 → 0,4966.
+
+### El diagnostico: es el Elo con otra forma
+
+Las features se usan **por encima de su peso** —6,9 % de la ganancia contra 3,8 %
+proporcional— y `af_lambda_dif` sale **tercera de 266**. Pero:
+
+| | correlacion con `dif_elo` |
+|---|---|
+| **`af_lambda_dif`** | **0,958** |
+| `dif_af_ataque` | 0,866 |
+| `dif_af_defensa` | 0,862 |
+
+Con 0,958 no es una vista distinta del mismo fenomeno: **es el mismo numero**. El Elo del
+proyecto ya amplifica por margen de gol, asi que reconstruirlo con forma de Poisson llega
+casi exactamente al mismo lado.
+
+### Y la unica feature ortogonal no tiene señal
+
+`af_lambda_total` —los goles esperados del partido, los dos lados sumados— es la unica nueva
+(0,165 con `dif_elo`), y apuntaba **directo al empate**: la idea de que un partido de pocos
+goles esperados empata mas. Sale **113 de 266** y:
+
+    AUC para el empate:  0,4738     (0,5 = nada)
+
+    cuartil de goles esperados   goles esp.   tasa de empate
+    0 (menos goles)                  2,506         0,284
+    1                                2,779         0,211
+    2                                2,968         0,309
+    3 (mas goles)                    3,215         0,295
+
+Sin patron. **Queda descartada tambien la hipotesis de que los partidos de pocos goles
+empatan mas**, que era la ultima idea del proyecto sobre el empate que no se habia medido.
+
+Queda todo detras de `features.ataque_defensa_activo: false`.
+
+---
+
 ## Fase 4: interacciones de matchup. Informacion nueva, sin señal
 
     python -m training.comparar_gold --base 20260901T233127Z --banco-b

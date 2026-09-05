@@ -1,4 +1,8 @@
-# Plan de mejoras: cuatro fases, un protocolo, y el criterio fijado de antemano
+# Plan de mejoras: cinco fases, un protocolo, y el criterio fijado de antemano
+
+> **Cerrado el 05/09/2026. Las cinco fases se construyeron enteras y las cinco se
+> rechazaron**, cada una por una razón distinta y verificada. El balance está al final de
+> `training/README.md`; el registro con todos los números, en `models/xgb_gbt/attempts.jsonl`.
 
 Este documento gobierna las próximas fases del modelo. Existe por una razón concreta: en el
 proyecto ya pasó **dos veces** que un número prometedor no sobrevivió a mirarlo bien.
@@ -267,7 +271,30 @@ Challenge 2023 fue CatBoost sobre pi-ratings.
 
 </details>
 
-### Fase 3 — Ratings de ataque y defensa (Berrar)
+### Fase 3 — Ratings de ataque y defensa · ❌ RECHAZADA (05/09/2026)
+
+**No entra.** Como sistema de goles funciona —deviance de Poisson 1,1436 contra 1,2464 de
+predecir el promedio, −8,2 %, con el óptimo interior— pero no mueve el modelo:
+
+- Banco A: delta RPS **+0,0002** ± 0,0013, cruza el cero; accuracy −0,0032.
+- Banco B: delta RPS +0,0006.
+- Subgrupos planos o peores.
+
+**La precondición de esta fase salió al revés de lo esperado:** el plan apostaba a que
+`pts_med` fuera la línea con dimensión propia, y resultó **la más redundante** (r=0,755 con
+`gf_u5`); los delanteros son los únicos con correlación baja (0,383).
+
+Diagnóstico: `af_lambda_dif` sale **tercera de 266** en importancia y correlaciona **0,958
+con `dif_elo`** — no es otra vista, es el mismo número. Y `af_lambda_total`, la única
+ortogonal, apuntaba directo al empate y **no tiene señal**: AUC 0,474 y tasa de empate por
+cuartil 0,284 / 0,211 / 0,309 / 0,295.
+
+Detalle en `training/README.md`. Queda tras `features.ataque_defensa_activo: false`.
+
+<details>
+<summary>El planteo original de la fase</summary>
+
+#### Ratings de ataque y defensa (Berrar)
 
 Ratings separados de ataque y defensa, actualizados con goles marcados y concedidos contra lo
 esperado. Ganó la Challenge 2017 (k-NN sobre estas features).
@@ -282,6 +309,8 @@ rating de mediocampo vale. Si no, es `dif_elo` disfrazado.
 > Ojo con la asimetría: ataque y defensa tienen base observable (goles marcados y concedidos,
 > atribuibles por separado). **Mediocampo no**: no hay "goles de mediocampo". Ese rating se
 > apoya en el puntaje de FPL, que es un constructo, no una medición.
+
+</details>
 
 ### Fase 5 — Valor de plantel · ❌ RECHAZADA (05/09/2026)
 

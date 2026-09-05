@@ -23,7 +23,8 @@ from common.storage import archivar, read_table, write_table
 from eda.baselines import odds_a_probabilidades
 from features import (cold_start, competencias as fcomp, elo, h2h,
                       opta as fopta, pi_ratings, player_agg, spec, team_form as tf,
-                      valores as fval, estilos as fest)
+                      valores as fval, estilos as fest,
+                      ataque_defensa as faf)
 from transform import historia as historia_mod, leakage, valores as valores_mod
 
 log = get_logger(__name__)
@@ -135,6 +136,8 @@ def construir(objetivos: pd.DataFrame | None = None,
     h_elo = elo.construir(largo, _historia_ratings())
     pi_on = CFG.pi_activo          # Fase 2: apagada por medicion, ver config.yaml
     h_pi = pi_ratings.construir(largo) if pi_on else None
+    af_on = CFG.af_activo         # Fase 3
+    h_af = faf.construir(largo) if af_on else None
 
     bloques = [
         _pegar_bloque(obj_lado, h_gen, ["team_short"], cols_gen, con_kickoff=True),
@@ -147,6 +150,8 @@ def construir(objetivos: pd.DataFrame | None = None,
     if pi_on:
         bloques.append(_pegar_bloque(obj_lado, h_pi, ["team_short"],
                                      list(pi_ratings.COLUMNAS)))
+    if af_on:
+        bloques.append(_pegar_bloque(obj_lado, h_af, ["team_short"], list(faf.COLUMNAS)))
     # Valor de plantel (Fase 5). No es un `merge_asof`: el hecho esta a nivel
     # jugador-intervalo y hay que AGREGAR los vigentes al corte. Ver `features/valores.py`.
     if CFG.valores_activo:
@@ -161,6 +166,7 @@ def construir(objetivos: pd.DataFrame | None = None,
     cols_lado = (cols_gen + cols_tmp + cols_cnd + cols_cmp + list(elo.COLUMNAS)
                  + (list(pi_ratings.COLUMNAS) if pi_on else [])
                  + (list(fval.COLUMNAS) if CFG.valores_activo else [])
+                 + (list(faf.COLUMNAS) if af_on else [])
                  + ["mins_hhi", "continuidad_plantel_u5", "hist_kickoff"])
 
     # Descanso: días entre el último partido usado y el que se predice. El calendario se
@@ -226,6 +232,8 @@ def construir(objetivos: pd.DataFrame | None = None,
     gold = _dificultad(gold, fixtures)
     # Fase 4: los cruces de estilo. Van DESPUES de que Opta esta pegado y antes de los
     # diferenciales, porque consumen columnas `local_*`/`visita_*` ya armadas.
+    if CFG.af_activo:
+        gold = faf.partido(gold, mu=faf.mu_de(largo))
     if CFG.estilos_activo:
         gold = fest.construir(gold)
     gold = _pi_partido(gold)

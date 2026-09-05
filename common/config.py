@@ -186,6 +186,19 @@ class Config:
         return self.raw["features"].get("xg_min_gameweek", {})
 
     @property
+    def af_activo(self) -> bool:
+        """Si entran los ratings de ataque y defensa (Fase 3). Ver config.yaml."""
+        return bool(self.raw["features"].get("ataque_defensa_activo", False))
+
+    @property
+    def af_k(self) -> float:
+        return float(self.raw["features"].get("af_k", 0.02))
+
+    @property
+    def af_ventaja(self) -> float:
+        return float(self.raw["features"].get("af_ventaja_local", 0.25))
+
+    @property
     def estilos_activo(self) -> bool:
         """Si entran las interacciones de matchup (Fase 4). Ver config.yaml."""
         return bool(self.raw["features"].get("estilos_activo", False))

@@ -107,6 +107,25 @@ features:
   # conservador y el que hace que las dobles fechas (85 casos) no filtren.
   corte: "inicio_de_fecha"
 
+  # --- Ratings de ATAQUE y DEFENSA (Fase 3) ---
+  #
+  # Familia Berrar, la que gano la Soccer Prediction Challenge 2017. Cada equipo tiene dos
+  # ratings y el sistema predice los goles de cada lado con forma de Poisson:
+  #   lambda_local = exp(mu + ataque_local - defensa_visita + ventaja)
+  # `k` y `ventaja` salen de `python -m features.ataque_defensa --ajustar`, por deviance de
+  # Poisson y SOLO sobre temporadas de train.
+  #
+  # **Apagado por medicion.** Banco A delta RPS +0,0002 +-0,0013 (cruza el cero), Banco B
+  # +0,0006, los tres subgrupos planos o peores. El diagnostico esta en `training/README.md`:
+  # `af_lambda_dif` sale TERCERA de 266 en importancia y correlaciona **0,958 con dif_elo** --
+  # es el Elo recalculado. Y `af_lambda_total`, la unica ortogonal, no tiene señal sobre el
+  # empate (AUC 0,474).
+  ataque_defensa_activo: false
+  # Ajustados: deviance 1,1436 contra 1,2464 de predecir siempre el promedio (-8,2%).
+  # El optimo es interior en las dos grillas.
+  af_k: 0.02
+  af_ventaja_local: 0.18
+
   # ¿Entran las interacciones de matchup (Fase 4)?
   #
   # Siete cruces elegidos por teoria sobre las features de Opta: lo que genera un equipo
