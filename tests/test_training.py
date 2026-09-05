@@ -354,3 +354,78 @@ def test_el_modelo_de_produccion_declara_que_sus_metricas_no_generalizan():
     if "incluye_holdout" not in meta:
         pytest.skip("modelo guardado antes de que existiera el flag")
     assert meta["metricas_son_de_generalizacion"] is not meta["incluye_holdout"]
+
+
+# ---------------------------------------------------------------------------
+# RPS — la métrica que sabe que las clases están ORDENADAS
+# ---------------------------------------------------------------------------
+
+def test_el_rps_de_una_prediccion_perfecta_es_cero():
+    P = np.array([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]])
+    assert metrics.rps(np.array(["home", "away"]), P) == pytest.approx(0.0)
+
+
+def test_el_rps_del_error_maximo_es_uno():
+    """Toda la probabilidad en un extremo y sale el otro. Es la cota superior."""
+    P = np.array([[1.0, 0.0, 0.0]])          # todo a `away`
+    assert metrics.rps(np.array(["home"]), P) == pytest.approx(1.0)
+
+
+def test_prueba_de_fuego_el_rps_ve_donde_quedo_el_error_y_el_log_loss_no():
+    """**La razón entera de agregar el RPS.**
+
+    Las dos predicciones salen `home` y le dan la MISMA probabilidad al local (0,60), así
+    que el log-loss —que sólo mira la probabilidad de la clase correcta— les da el mismo
+    número. Pero una puso su error en el empate (la clase de al lado) y la otra en la
+    visita (el extremo opuesto). La segunda es peor, y sólo el RPS lo ve.
+
+    Importa acá porque el empate está en el MEDIO: es donde cae la masa de un modelo que
+    duda. Bajo log-loss dudar hacia el empate no vale más que dudar hacia el extremo
+    equivocado; bajo RPS sí.
+    """
+    y = np.array(["home"])
+    cerca = np.array([[0.00, 0.40, 0.60]])     # away, draw, home
+    lejos = np.array([[0.40, 0.00, 0.60]])
+
+    assert metrics.rps(y, cerca) == pytest.approx(0.08)
+    assert metrics.rps(y, lejos) == pytest.approx(0.16)
+    assert metrics.rps(y, cerca) < metrics.rps(y, lejos)
+
+    ll_cerca = log_loss(y, cerca, labels=CLASES_ORD)
+    ll_lejos = log_loss(y, lejos, labels=CLASES_ORD)
+    assert ll_cerca == pytest.approx(ll_lejos), "el log-loss NO distingue: ese es el punto"
+
+
+def test_el_orden_ordinal_es_visita_empate_local():
+    """Fija el orden por su significado, no por el alfabeto.
+
+    `CLASES_ORD` sale de ordenar alfabéticamente y hoy coincide con el orden del
+    resultado. Es casualidad. Si alguien renombra una clase y la coincidencia se rompe,
+    el RPS empezaría a medir mal en silencio; este test lo detiene.
+    """
+    assert metrics.ORDEN_ORDINAL == ["away", "draw", "home"]
+    assert metrics.ORDEN_ORDINAL[1] == "draw", "el empate tiene que estar en el MEDIO"
+
+
+def test_el_rps_no_depende_del_orden_en_que_llegan_las_columnas():
+    P = pd.DataFrame({"home": [0.65], "draw": [0.25], "away": [0.10]})
+    assert metrics.rps(np.array(["draw"]), P) == pytest.approx(0.21625)
+
+
+def test_el_rps_premia_a_quien_dice_la_verdad():
+    """Regla de scoring propia: con datos generados por `p`, ninguna otra distribución
+    saca mejor RPS esperado que `p`."""
+    rng = np.random.default_rng(0)
+    p = np.array([0.25, 0.30, 0.45])
+    y = np.asarray(metrics.ORDEN_ORDINAL)[rng.choice(3, 20000, p=p)]
+    honesto = metrics.rps(y, np.tile(p, (len(y), 1)))
+    for otra in ([0.45, 0.30, 0.25], [0.10, 0.10, 0.80], [1 / 3, 1 / 3, 1 / 3]):
+        assert honesto < metrics.rps(y, np.tile(np.array(otra), (len(y), 1)))
+
+
+def test_el_reporte_incluye_el_rps():
+    y = np.array(["home", "draw", "away", "home"])
+    P = np.array([[0.2, 0.2, 0.6], [0.2, 0.5, 0.3], [0.7, 0.2, 0.1], [0.1, 0.3, 0.6]])
+    rep = metrics.reporte(y, np.array(CLASES_ORD)[P.argmax(1)], P, con_ic=False)
+    assert 0.0 <= rep["rps"] <= 1.0
+    assert rep["rps"] == pytest.approx(metrics.rps(y, P))

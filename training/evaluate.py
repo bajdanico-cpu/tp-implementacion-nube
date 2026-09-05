@@ -117,7 +117,8 @@ def _baselines(filas: pd.DataFrame) -> dict:
 def walk_forward(nombre: str, info, features: list[str] | None = None,
                  gold: pd.DataFrame | None = None,
                  temporada: str | None = None,
-                 n_estimators: int | None = None) -> pd.DataFrame:
+                 n_estimators: int | None = None,
+                 guardar_proba: bool = False) -> pd.DataFrame:
     """Reentrena fecha a fecha y predice la siguiente. Simula el ciclo del bloque 9.
 
     Para cada gameweek se entrena con **todo lo anterior a su corte** y se predice esa
@@ -128,6 +129,11 @@ def walk_forward(nombre: str, info, features: list[str] | None = None,
     que se reporta en el holdout —uno mucho más sobreajustado— y la comparación no querría
     decir nada. Fijarlo también es lo que haría un reentrenamiento semanal real: se
     reentrena con los datos nuevos, no se re-tunea de cero cada semana.
+
+    Con `guardar_proba=True` cada fila se lleva además la matriz de probabilidades y las
+    etiquetas reales de su fecha. Es lo que permite evaluar una **regla de decisión**
+    distinta sobre exactamente la misma simulación, sin volver a entrenar 38 veces
+    (`training/decision_eval.py`). Va apagado por defecto porque engorda el CSV.
     """
     gold = dataset.cargar() if gold is None else gold
     features = features or spec.FEATURES
@@ -174,6 +180,9 @@ def walk_forward(nombre: str, info, features: list[str] | None = None,
             "aciertos": (pred == y).tolist(),
             "fixture_ids": test["fixture_id"].tolist(),
         })
+        if guardar_proba:
+            filas[-1]["proba"] = proba.tolist()
+            filas[-1]["y"] = y.tolist()
         log.info("WF %s GW%02d | n=%d acc=%.3f LL=%.3f (local %.3f)",
                  temporada, f["gameweek"], len(test), rep["accuracy"],
                  rep["log_loss"], base["accuracy"])

@@ -76,6 +76,60 @@ Y `xgb_rf` **iguala o supera la accuracy del mercado (0,505 vs 0,495) sin usar c
 que era la comparación honesta. En log-loss el mercado sigue adelante (1,012 vs 1,029):
 está mejor calibrado, aunque acierte menos veces el argmax.
 
+## RPS: la metrica que sabe que las clases estan ORDENADAS
+
+El log-loss mira **una sola cosa**: la probabilidad que le pusiste al resultado que salio.
+Como repartiste el resto le da igual. Y en este problema el resto importa, porque el empate
+esta **en el medio**: es donde cae la masa de un modelo que duda.
+
+El **Ranked Probability Score** mira las acumuladas, asi que da credito parcial por quedar
+cerca. Las dos predicciones de abajo salen `home` y le dan la misma probabilidad al local:
+
+| | visita | empate | local | log-loss | RPS |
+|---|---|---|---|---|---|
+| error pegado al empate | 0,00 | 0,40 | 0,60 | 0,5108 | **0,0800** |
+| error tirado a la visita | 0,40 | 0,00 | 0,60 | 0,5108 | **0,1600** |
+
+    RPS = 1/(r-1) * suma_{i=1}^{r-1} ( P(<=i) - O(<=i) )^2
+
+Se reporta **al lado** del log-loss, no en su lugar: el log-loss es el que castiga la mala
+calibracion que le importa a la capa de apuestas. Implementado en `training/metrics.rps`.
+
+### Y sirve para compararse con la literatura
+
+El RPS es la metrica de las dos **Soccer Prediction Challenges**, que publicaron numeros
+sobre 200-300 mil partidos. Nuestro holdout, 380 partidos de Premier:
+
+| | RPS | log-loss | accuracy |
+|---|---|---|---|
+| mercado (cuotas de cierre) | **0,2045** | 1,012 | 0,495 |
+| `xgb_rf` | 0,2073 | 1,030 | 0,495 |
+| **`xgb_gbt`** (produccion) | **0,2084** | 1,030 | 0,497 |
+| `hgb` | 0,2092 | 1,034 | 0,505 |
+| `poisson` / `poisson_dc` | 0,2137 | 1,044 | 0,487 |
+| prior de clase | 0,2278 | 1,085 | 0,426 |
+| `ordinal` | 0,2381 | 1,339 | 0,440 |
+| siempre local | 0,4368 | — | 0,426 |
+
+Contra las varas publicadas:
+
+| | RPS | |
+|---|---|---|
+| consenso de casas de apuestas | 0,2063 | **gano** la Challenge 2023 |
+| CatBoost + pi-ratings | 0,2085 | mejor ML de esa edicion (validacion) |
+| k-NN + Berrar ratings | 0,2149 | gano la Challenge 2017, con 216.743 partidos de train |
+| prior de clase | 0,2303 | el piso |
+
+**`xgb_gbt` saca 0,2084 con 1.140 filas de entrenamiento.** El ganador de 2017 saco 0,2149
+con 216.743. No es que estemos cerca del estado del arte por casualidad: **el rango entero
+entre no saber nada (0,2303) y lo mejor del mundo (0,2063) son 0,024 de RPS**. La señal que
+existe en este problema es minuscula, y en las dos ediciones el que gano —o casi— fue el
+mercado, no un modelo.
+
+> Compararse de mas seria un error: esos numeros son sobre decenas de ligas mezcladas, y una
+> liga mas predecible que la Premier baja el RPS de todos. Sirven como **escala de magnitud**,
+> no como tabla de posiciones.
+
 ### El empate: donde la accuracy engaña
 
 La matriz de confusión de `xgb_rf`:
@@ -792,6 +846,76 @@ tamaño de la muestra, no el algoritmo.**
 No es una decision de modelado sino **de negocio**: cuanto cuesta perderse un empate contra
 cuanto cuesta anunciar uno que no fue. A 0,30 se recuperan 36 empates sin costo de accuracy
 — pero ojo, con AUC 0,515 eso es afinar un umbral sobre una señal que no ordena.
+
+#### Correccion (05/09/2026): ese +0,0079 es ruido de semilla
+
+    python -m training.decision_eval --walk-forward --semillas
+
+La tabla de arriba sale de **una** corrida (5 semillas promediadas). Repitiendo la misma
+comparacion y cambiando **solo** cuantas semillas se promedian:
+
+| semillas | argmax | umbral 0,30 | delta | discordantes | McNemar |
+|---|---|---|---|---|---|
+| 1 | 0,4947 | 0,4947 | 0,0000 | 24 | 12/12 · p=1,000 |
+| 3 | 0,5000 | 0,5000 | 0,0000 | 22 | 11/11 · p=1,000 |
+| **5 (produccion)** | 0,4947 | 0,5026 | **+0,0079** | 21 | 12/9 · p=0,664 |
+| 7 | 0,4974 | 0,4947 | −0,0026 | 21 | 10/11 · p=1,000 |
+
+Y en el walk-forward —el protocolo mas parecido a produccion, que reentrena en cada fecha—
+cambiando **solo** la semilla de entrenamiento: delta +0,0263 / +0,0105 / −0,0053 / −0,0053
+/ +0,0184 para las semillas 42 / 7 / 123 / 2024 / 999. **Media +0,0089, desvio 0,0141.**
+
+La corrida con `seed=42` —el default del proyecto, la que habria quedado en el informe— es
+**la mejor de las cinco**, con p=0,076. Ese numero desaparece al tocar una variable que no
+tiene nada que ver con la regla.
+
+**Conclusion:** el umbral no mejora la accuracy de forma demostrable. Lo que si sube en toda
+corrida es el F1 macro (0,39 → 0,44) y el F1 del empate (0,06 → 0,20) — que es exactamente
+la trampa del volumen ya documentada para `ordinal`. Y el **log-loss no se mueve nunca**: la
+regla no toca las probabilidades.
+
+#### El umbral tampoco se transfiere entre modelos
+
+Mismo 0,30 aplicado a los nueve modelos del holdout (`decision_holdout.csv`):
+
+| modelo | argmax | umbral 0,30 | delta | McNemar |
+|---|---|---|---|---|
+| xgb_gbt | 0,5000 | 0,5000 | 0,0000 | 11/11 · p=1,000 |
+| xgb_rf | 0,4947 | 0,5053 | +0,0105 | 5/1 · p=0,219 |
+| hgb | 0,5000 | 0,4895 | −0,0105 | 8/12 · p=0,503 |
+| **logreg** | 0,4605 | 0,3974 | **−0,0632** | 8/32 · **p=0,0002** |
+| ordinal | 0,4395 | 0,4000 | −0,0395 | 22/37 · p=0,067 |
+| mlp | 0,4789 | 0,4447 | −0,0342 | 18/31 · p=0,085 |
+| mercado | 0,4947 | 0,4895 | −0,0053 | 5/7 · p=0,774 |
+
+**El unico resultado significativo de toda la tabla es en contra** (logreg, p=0,0002). La
+causa es directa: el umbral interactua con cuanta masa pone cada modelo en el empate.
+`logreg` y `ordinal` ya anuncian 59 y 68 empates por argmax, asi que 0,30 los desborda a 113
+y 149. Un umbral es un parametro de la calibracion de **ese** modelo, no una regla portable.
+
+#### Y por eso el 0,30 corre EN PARALELO, no en produccion
+
+    python -m serving.decision                   # las reglas activas y donde discrepan
+    python -m monitoring.temporada_actual        # el McNemar candidato vs produccion
+
+El umbral **no es un hiperparametro del modelo**: los boosters son los mismos y las
+probabilidades son identicas al bit. Cambia solo la funcion que va de `P` a la etiqueta.
+Eso hace que medirlo en paralelo salga casi gratis, y que la comparacion sea lo mas pareada
+posible —mismo modelo, mismas probabilidades, mismos partidos—, asi que el test correcto es
+el **McNemar** de `training/promotion.py`: solo informan los partidos donde las dos reglas
+discrepan, que son uno o dos por fecha.
+
+La regla vive en `config.yaml` (`training.decision.candidatos`) y se implementa en
+`serving/decision.py`. Cada prediccion registra una columna por regla, y el candidato
+declara **desde cuando** su medicion cuenta: se fijo el 2026-09-01 con las fechas 1 y 2 ya
+jugadas, asi que la evidencia prospectiva arranca en la **fecha 3 de 2026-27**. Las fechas
+anteriores se etiquetan igual —la regla es funcion pura de las probabilidades guardadas—
+pero se reportan aparte: reproducir no es predecir.
+
+> Lo que muestra el retrospectivo de las fechas 1 y 2, para que se vea por que no cuenta:
+> 0,5500 contra 0,5000. Suena a +5 puntos, pero son 20 partidos y **3 discrepancias**. Con
+> n=20 el error estandar de la accuracy es ±11 puntos. Es exactamente el tipo de numero que
+> el `desde` existe para que nadie cite como evidencia.
 
 ---
 

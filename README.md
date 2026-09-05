@@ -97,6 +97,8 @@ python -m training.reproducir                              # que hace falta para
 python -m serving.predict --gw 3                           # predice y registra la fecha
 python -m serving.predict --gw 1 --evaluar                 # una ya jugada, contra el real
 python -m monitoring.temporada_actual                      # metricas en vivo de 2026-27
+python -m serving.decision                                 # reglas de decision en paralelo
+python -m training.decision_eval --walk-forward --semillas # cuanto mueve la regla, medido
 
 # 6. El notebook que recorre todo
 python notebooks/00_recorrido_completo.py                  # regenera el .ipynb

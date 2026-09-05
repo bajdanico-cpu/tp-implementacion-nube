@@ -155,6 +155,41 @@ training:
   n_seeds: 5
   seed: 42
 
+  # --- La regla de decision: de las tres probabilidades a UNA clase ---
+  #
+  # No es un hiperparametro del modelo. Los boosters son los mismos y las probabilidades
+  # son identicas al bit: cambia solo la funcion que va de P a la etiqueta. Por eso un
+  # candidato aca no necesita ni reentreno ni un .ubj propio, y la comparacion contra
+  # produccion es pareada sobre los mismos partidos (McNemar, ver `promocion`).
+  #
+  # La implementacion, con la tabla del holdout y las advertencias, esta en
+  # `serving/decision.py`.
+  decision:
+    produccion:
+      regla: "argmax"
+      motivo: "la clase mas probable; es lo que el sistema anuncia"
+
+    # Corren EN PARALELO: se registran en cada prediccion y se miden fecha a fecha,
+    # pero no cambian lo que el sistema anuncia hasta que el test los respalde.
+    candidatos:
+      - nombre: "umbral_empate_030"
+        regla: "umbral_empate"
+        umbral: 0.30
+        # Desde donde la medicion es PROSPECTIVA. Las fechas anteriores se etiquetan
+        # igual (la regla es funcion pura de las probabilidades guardadas) pero no
+        # cuentan como evidencia: la regla se eligio el 2026-09-01, con las fechas 1 y 2
+        # ya jugadas y la 3 todavia sin empezar.
+        desde: "2026-27 GW3"
+        motivo: >-
+          En el holdout de 380 partidos pasa de 4 empates predichos a 36 con precision
+          0,417. La accuracy NO mejora de forma demostrable: medido en
+          `training/decision_eval.py`, el delta va de -0,005 a +0,026 segun la semilla,
+          con McNemar entre p=0,08 y p=1,00 -- mas chico que el ruido. El AUC del empate
+          es 0,515 [0,441-0,584]: el umbral cambia CUANTOS empates se anuncian, no CUALES.
+          Corre en paralelo igual porque es la palanca de NEGOCIO correcta (costo de
+          perderse un empate contra costo de anunciar uno que no fue) y porque la
+          temporada en curso es la unica muestra que todavia no se miro.
+
   promocion:
     # Fechas de la ventana rodante sobre la que se compara candidato vs produccion.
     # Con una sola fecha (10 partidos) el error estandar de la accuracy es +-15,7 puntos:

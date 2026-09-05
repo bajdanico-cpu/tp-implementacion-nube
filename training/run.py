@@ -98,6 +98,10 @@ def _mostrar(nombre: str, rep: dict, roi: dict) -> None:
     print(f"  f1 macro   {rep['f1_macro']:.4f}   precision {rep['precision_macro']:.4f}"
           f"   recall {rep['recall_macro']:.4f}")
     print(f"  log-loss   {rep['log_loss']:.4f}")
+    # RPS al lado del log-loss: es la metrica ordinal, y la que permite compararse
+    # contra las Soccer Prediction Challenges (0,2063 mercado / 0,2149 ganador 2017 /
+    # 0,2303 prior). Ver `training/metrics.rps`.
+    print(f"  RPS        {rep['rps']:.4f}   (mercado 0,2045 y prior 0,2278 en este holdout)")
     print(f"  por clase  " + "  ".join(
         f"{c}: f1={rep[f'f1_{c}']:.3f}" for c in rep["clases"]))
     print("\n  matriz de confusión (filas = real, cols = predicho)")
@@ -168,6 +172,7 @@ def main() -> None:
             "ic_bajo": r["reporte"]["accuracy_ic95"][0],
             "ic_alto": r["reporte"]["accuracy_ic95"][1],
             "f1_macro": r["reporte"]["f1_macro"], "log_loss": r["reporte"]["log_loss"],
+            "rps": r["reporte"]["rps"],
             "roi": r["roi"]["modelo"].get("roi"),
         } for r in resultados])
         comp.to_csv(SALIDA / "comparacion_modelos.csv", index=False)

@@ -211,6 +211,16 @@ class Config:
         return self.training.get("valid_season", "2024-25")
 
     @property
+    def decision(self) -> dict[str, Any]:
+        """La regla que va de las tres probabilidades a una clase, y sus candidatas.
+
+        Vive en config y no en el codigo porque es una decision de NEGOCIO (cuanto cuesta
+        perderse un empate contra cuanto cuesta anunciar uno que no fue), no de modelado:
+        los boosters no cambian. Ver `serving/decision.py`.
+        """
+        return self.training.get("decision", {}) or {}
+
+    @property
     def seed(self) -> int:
         return int(self.training.get("seed", 42))
 

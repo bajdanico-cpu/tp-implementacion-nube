@@ -19,6 +19,11 @@ pide de una predicción de producción:
 3. **Cada predicción se registra** con el `fixture_id`, el momento en que se predijo, la
    versión del modelo y del feature set, y las tres probabilidades. Sin ese registro no hay
    monitoreo después: sólo un endpoint que responde.
+
+La conversión de las tres probabilidades a una clase es un paso **aparte del modelo** y
+vive en `serving/decision.py`: además de `prediccion` (la regla de producción) se registra
+una columna por cada regla **candidata**, que corre en paralelo sobre los mismos partidos
+sin cambiar lo que el sistema anuncia.
 """
 
 from __future__ import annotations
@@ -36,6 +41,7 @@ from common.logging_setup import get_logger, setup
 from common.storage import read_table
 from eda.baselines import CLASES_ORD
 from features import gold_tp, spec
+from serving import decision
 from training import betting, registry
 
 log = get_logger(__name__)
@@ -157,8 +163,12 @@ def predecir(season: str, gameweek: int, nombre: str | None = None,
                  "home_short", "away_short"]].copy()
     for i, c in enumerate(CLASES_ORD):
         out[f"p_{c}"] = P[:, i]
-    out["prediccion"] = np.array(CLASES_ORD)[P.argmax(1)]
-    out["confianza"] = P.max(1)
+    # `prediccion` sale de la regla de PRODUCCION, y cada candidata deja su propia columna.
+    # Todas leen las mismas probabilidades, asi que el registro queda listo para la
+    # comparacion pareada del monitoreo sin volver a predecir nada.
+    out = decision.etiquetar(out)
+    elegida = [CLASES_ORD.index(c) for c in out["prediccion"]]
+    out["confianza"] = P[np.arange(len(P)), elegida]
 
     # Trazabilidad: sin esto no hay monitoreo, sólo un endpoint que responde.
     out["predicted_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -212,6 +222,20 @@ def evaluar(pred: pd.DataFrame) -> dict:
     rep = metrics.reporte(jugados["target_1x2"].to_numpy(),
                           jugados["prediccion"].to_numpy(), P, con_ic=False)
     rep["acierta_siempre_local"] = float((jugados["target_1x2"] == "home").mean())
+
+    # Cada regla de decision sobre las MISMAS filas. Con una fecha sola no alcanza para
+    # concluir nada (n=10 -> error estandar +-15,7 puntos); el veredicto lo da el
+    # acumulado de `monitoring.temporada_actual`. Aca es para verlo pasar.
+    season, gw = jugados["season"].iloc[0], int(jugados["gameweek"].iloc[0])
+    rep["por_regla"] = {
+        r.nombre: {
+            "columna": r.columna,
+            "accuracy": float((jugados[r.columna] == jugados["target_1x2"]).mean()),
+            "empates_predichos": int((jugados[r.columna] == "draw").sum()),
+            "prospectiva": r.cuenta_para(season, gw),
+        }
+        for r in decision.todas() if r.columna in jugados.columns
+    }
     rep["detalle"] = d
     return rep
 
@@ -234,12 +258,19 @@ def main() -> None:
     print(f"{args.season} — FECHA {args.gw}    modelo {pred['model_name'].iloc[0]} "
           f"({pred['model_version'].iloc[0]})")
     print(f"{'=' * 78}\n")
+    cands = decision.candidatos()
+    cabecera = "".join(f"{c.nombre[:20]:>22s}" for c in cands)
     print(f"{'kickoff':<17}{'partido':<16}{'local':>7}{'empate':>8}{'visita':>8}"
-          f"   predice")
+          f"   {'predice':<8}{cabecera}")
     for r in pred.itertuples():
         partido = f"{r.home_short}-{r.away_short}"
+        # Se marca con `*` donde el candidato discrepa: es lo unico que despues aporta
+        # informacion al McNemar, asi que conviene verlo de un vistazo.
+        extra = "".join(
+            f"{getattr(r, c.columna) + ('  *' if getattr(r, c.columna) != r.prediccion else ''):>22s}"
+            for c in cands)
         print(f"{str(r.kickoff_time)[:16]:<17}{partido:<16}"
-              f"{r.p_home:>7.3f}{r.p_draw:>8.3f}{r.p_away:>8.3f}   {r.prediccion}")
+              f"{r.p_home:>7.3f}{r.p_draw:>8.3f}{r.p_away:>8.3f}   {r.prediccion:<8}{extra}")
 
     if not args.no_guardar:
         guardar(pred)
@@ -262,6 +293,13 @@ def main() -> None:
         print(f"\n  accuracy   {ev['accuracy']:.3f}  ({int(ev['accuracy'] * ev['n'])} de {ev['n']})")
         print(f"  log-loss   {ev['log_loss']:.4f}")
         print(f"  'siempre local' habria acertado: {ev['acierta_siempre_local']:.3f}")
+
+        if len(ev["por_regla"]) > 1:
+            print(f"\n  por regla de decision (mismas {ev['n']} filas, mismo modelo):")
+            for nombre, r in ev["por_regla"].items():
+                marca = "" if r["prospectiva"] else "   (retrospectivo: no cuenta)"
+                print(f"    {nombre:<26s} accuracy {r['accuracy']:.3f}   "
+                      f"empates predichos {r['empates_predichos']:>2d}{marca}")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,11 @@ Lo que produce, que es el bloque 10 del canvas:
   caída del mercado es la liga siendo más impredecible, no el modelo degradándose.
 - Acumulado de la temporada, con su intervalo de confianza.
 - La serie de aciertos pareada que alimenta el McNemar de la regla de promoción.
+- **Las reglas de decisión candidatas, en paralelo.** Cada una decide sobre las mismas
+  probabilidades del mismo modelo (ver `serving/decision.py`), así que la comparación
+  contra producción es pareada partido a partido y el test correcto es McNemar. Sólo
+  cuentan las fechas posteriores al `desde` que la regla declara: etiquetar hacia atrás
+  una fecha ya jugada reproduce, no predice.
 """
 
 from __future__ import annotations
@@ -31,7 +36,8 @@ from common.logging_setup import get_logger, setup
 from common.storage import read_table
 from eda.baselines import CLASES_ORD, baseline_prior_de_clase, baseline_siempre_local
 from features import spec
-from training import betting, dataset, metrics
+from training import betting, dataset, metrics, promotion
+from serving import decision
 from serving import predict as srv
 
 log = get_logger(__name__)
@@ -81,7 +87,7 @@ def evaluar_fecha(season: str, gameweek: int, gold: pd.DataFrame,
         return None
 
     y = d["target_1x2"].to_numpy()
-    pred = np.array(CLASES_ORD)[P.argmax(1)]
+    pred = decision.produccion().aplicar(P)
     rep = metrics.reporte(y, pred, P, con_ic=False)
 
     # Los baselines, sobre LAS MISMAS filas. Comparar contra un baseline de otro período
@@ -93,7 +99,7 @@ def evaluar_fecha(season: str, gameweek: int, gold: pd.DataFrame,
     fila = {
         "season": season, "gameweek": gameweek, "n": len(d),
         "accuracy": rep["accuracy"], "f1_macro": rep["f1_macro"],
-        "log_loss": rep["log_loss"],
+        "log_loss": rep["log_loss"], "rps": rep["rps"],
         "acc_siempre_local": local["accuracy"],
         "acc_prior": prior["accuracy"], "ll_prior": prior.get("log_loss"),
         "confianza_media": float(P.max(1).mean()),
@@ -102,6 +108,21 @@ def evaluar_fecha(season: str, gameweek: int, gold: pd.DataFrame,
     fila["gana_a_local"] = fila["accuracy"] > fila["acc_siempre_local"]
     fila["gana_al_prior"] = (fila["ll_prior"] is not None
                              and fila["log_loss"] < fila["ll_prior"])
+
+    # Las reglas candidatas, sobre las MISMAS probabilidades y las MISMAS filas. Nada de
+    # esto vuelve a predecir: es el mismo `P` leido con otra funcion de decision.
+    fila["reglas"] = {}
+    for r in decision.todas():
+        etiquetas = r.aplicar(P)
+        aciertos = etiquetas == y
+        fila["reglas"][r.nombre] = {
+            "aciertos": aciertos.tolist(),
+            "accuracy": float(aciertos.mean()),
+            "empates_predichos": int((etiquetas == "draw").sum()),
+            "prospectiva": r.cuenta_para(season, gameweek),
+            "es_produccion": r.es_produccion,
+        }
+        fila[f"acc_{r.nombre}"] = float(aciertos.mean())
 
     # Si hay cuotas, se agrega el resultado de apostar. En la temporada en curso puede que
     # todavía no estén: football-data publica el archivo de temporada con retraso.
@@ -145,10 +166,72 @@ def resumen(df: pd.DataFrame) -> dict:
         "accuracy_acumulada": float(aciertos.mean()),
         "accuracy_ic95": [lo, hi],
         "log_loss_media": float(df["log_loss"].mean()),
+        "rps_medio": float(df["rps"].mean()),
         "accuracy_siempre_local": float(df["acc_siempre_local"].mean()),
         "pct_fechas_gana_a_local": float(df["gana_a_local"].mean()),
         "pct_fechas_gana_al_prior": float(df["gana_al_prior"].mean()),
     }
+
+
+def comparar_reglas(df: pd.DataFrame) -> list[dict]:
+    """Cada regla candidata contra la de producción, fecha a fecha y acumulado.
+
+    La comparación es lo más pareada que puede ser —mismo modelo, mismas probabilidades,
+    mismos partidos—, así que el test es **McNemar** y no dos accuracies sueltas: sólo
+    informan los partidos donde las dos reglas **discrepan**, que suelen ser un puñado por
+    fecha. Es la misma maquinaria de `training/promotion.py` que decide promover un modelo.
+
+    Se cuentan sólo las fechas desde el `desde` que la regla declara. Las anteriores se
+    reportan aparte: etiquetarlas es reproducir, no predecir, y mezclarlas inflaría la
+    evidencia con las fechas que se usaron para elegir la regla.
+    """
+    if df.empty or "reglas" not in df.columns:
+        return []
+
+    prod = decision.produccion()
+    out = []
+    for r in decision.candidatos():
+        marca = df["reglas"].map(lambda d, n=r.nombre: d[n]["prospectiva"])
+        usables, previas = df[marca], df[~marca]
+
+        def serie(sub: pd.DataFrame, nombre: str) -> np.ndarray:
+            if sub.empty:
+                return np.zeros(0, dtype=bool)
+            return np.concatenate([np.asarray(f[nombre]["aciertos"], dtype=bool)
+                                   for f in sub["reglas"]])
+
+        cand = serie(usables, r.nombre)
+        base = serie(usables, prod.nombre)
+        fila = {
+            "regla": r.nombre, "desde": r.desde,
+            "fechas": int(len(usables)), "partidos": int(cand.size),
+            "fechas_retrospectivas": int(len(previas)),
+            "acc_candidato": float(cand.mean()) if cand.size else None,
+            "acc_produccion": float(base.mean()) if base.size else None,
+            "empates_candidato": int(sum(f[r.nombre]["empates_predichos"]
+                                         for f in usables["reglas"])),
+            "empates_produccion": int(sum(f[prod.nombre]["empates_predichos"]
+                                          for f in usables["reglas"])),
+        }
+        if cand.size:
+            d = promotion.decidir(cand, base)
+            fila["mcnemar"] = d.detalle["mcnemar"]
+            fila["promover"] = d.promover
+            fila["motivo"] = d.motivo
+        else:
+            fila["mcnemar"] = None
+            fila["promover"] = False
+            fila["motivo"] = (f"todavía no se jugó ninguna fecha desde {r.desde}: "
+                              f"no hay evidencia prospectiva")
+        if not previas.empty:
+            cand_prev, base_prev = serie(previas, r.nombre), serie(previas, prod.nombre)
+            fila["retrospectivo"] = {
+                "partidos": int(cand_prev.size),
+                "acc_candidato": float(cand_prev.mean()),
+                "acc_produccion": float(base_prev.mean()),
+            }
+        out.append(fila)
+    return out
 
 
 def main() -> None:
@@ -164,12 +247,13 @@ def main() -> None:
         return
 
     season = df["season"].iloc[0]
-    df.drop(columns="aciertos").to_csv(SALIDA / f"monitoreo_{season}.csv", index=False)
+    df.drop(columns=[c for c in ("aciertos", "reglas") if c in df.columns]).to_csv(
+        SALIDA / f"monitoreo_{season}.csv", index=False)
 
     print(f"\n{'=' * 78}")
     print(f"TEMPORADA EN CURSO — {season}   (el modelo NUNCA vio estos partidos)")
     print("=" * 78 + "\n")
-    cols = ["gameweek", "n", "accuracy", "log_loss", "acc_siempre_local", "acc_prior",
+    cols = ["gameweek", "n", "accuracy", "log_loss", "rps", "acc_siempre_local", "acc_prior",
             "confianza_media", "gana_a_local", "gana_al_prior"]
     print(df[[c for c in cols if c in df.columns]].round(3).to_string(index=False))
 
@@ -182,6 +266,29 @@ def main() -> None:
     if r["partidos"] < 100:
         print(f"\n  ⚠️  Con {r['partidos']} partidos el intervalo es enorme: "
               f"±{(ic[1] - ic[0]) / 2 * 100:.0f} puntos. Todavía no se puede concluir nada.")
+
+    comparaciones = comparar_reglas(df)
+    if comparaciones:
+        print(f"\n{'-' * 78}\nREGLAS DE DECISIÓN EN PARALELO   "
+              f"(mismo modelo, mismas probabilidades, mismos partidos)\n{'-' * 78}")
+        for c in comparaciones:
+            print(f"\n  {c['regla']}  vs  producción      mide desde {c['desde']}")
+            if c["partidos"]:
+                print(f"    {c['fechas']} fechas / {c['partidos']} partidos   "
+                      f"accuracy {c['acc_candidato']:.4f} contra {c['acc_produccion']:.4f}")
+                print(f"    empates anunciados: {c['empates_candidato']} contra "
+                      f"{c['empates_produccion']}")
+                mc = c["mcnemar"]
+                print(f"    McNemar: {mc['n_discordantes']} pares discordantes "
+                      f"({mc['n01']} a favor / {mc['n10']} en contra), p={mc['p_valor']:.4f}")
+            print(f"    -> {'PROMOVER' if c['promover'] else 'no promover'}: {c['motivo']}")
+            if "retrospectivo" in c:
+                rt = c["retrospectivo"]
+                print(f"    (retrospectivo, {c['fechas_retrospectivas']} fechas / "
+                      f"{rt['partidos']} partidos anteriores al `desde`: "
+                      f"{rt['acc_candidato']:.4f} contra {rt['acc_produccion']:.4f} — "
+                      f"se muestra, no cuenta)")
+
     print(f"\nCSV en {SALIDA / f'monitoreo_{season}.csv'}")
 
 

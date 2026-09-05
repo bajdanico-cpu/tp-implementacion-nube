@@ -134,6 +134,7 @@ def correr(features: list[str] | None = None, n_seeds: int = 3) -> pd.DataFrame:
                 "ic_bajo": rep["accuracy_ic95"][0], "ic_alto": rep["accuracy_ic95"][1],
                 "f1_macro": rep["f1_macro"], "f1_draw": rep["f1_draw"],
                 "log_loss": rep["log_loss"],
+                "rps": rep["rps"],
                 "empates_pred": int((P.argmax(1) == 1).sum()),
                 "roi": roi.get("roi"), "n_apuestas": roi.get("n_apuestas"),
             })
@@ -165,7 +166,7 @@ def main() -> None:
         print("\n--- mejor por log-loss ---")
         print(ok.loc[ok["log_loss"].idxmin()].to_string())
         print("\n--- efecto de la variante de datos, promediado sobre modelos ---")
-        print(ok.groupby("datos")[["accuracy", "f1_macro", "log_loss"]]
+        print(ok.groupby("datos")[["accuracy", "f1_macro", "log_loss", "rps"]]
                 .mean().round(4).to_string())
 
     print(f"\nCSV en {SALIDA / 'comparacion_completa.csv'}")
