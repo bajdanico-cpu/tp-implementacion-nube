@@ -100,6 +100,11 @@ python -m monitoring.temporada_actual                      # metricas en vivo de
 python -m serving.decision                                 # reglas de decision en paralelo
 python -m training.decision_eval --walk-forward --semillas # cuanto mueve la regla, medido
 
+# 5 bis 2. Historia profunda para los ratings (Fase 1 — medida y rechazada)
+python -m ingestion.bronze_fd_historia                     # E0/E1/E2 desde 2000-01
+python -m transform.historia                               # 37.840 partidos
+python -m training.comparar_gold --banco-b                 # dos versiones de Gold, Bancos A y B
+
 # 5 ter. Versionado de Silver y Gold — nada se pisa, nunca
 python -m common.versiones                                 # vigente + historico
 python -m common.versiones --snapshot "antes de X"         # congela lo vigente, con nombre

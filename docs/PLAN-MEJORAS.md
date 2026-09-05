@@ -182,7 +182,34 @@ tabla que contesta "¿cuánto aportó cada cosa?".
 
 ## Las cuatro fases
 
-### Fase 1 — Historia profunda para los ratings (no como filas de entrenamiento)
+### Fase 1 — Historia profunda para los ratings · ❌ RECHAZADA (05/09/2026)
+
+**No entra.** Se construyó entera —37.840 partidos de E0/E1/E2 desde 2000, la separación
+entre divisiones emergiendo sola de los ascensos— y no pasó ninguno de los tres criterios:
+
+- Banco A: delta RPS **+0,0010** ± 0,0011 (peor), cruza el cero entre semillas; McNemar
+  p ∈ [0,146 – 1,000].
+- Banco B: delta RPS **+0,0006** (peor).
+- Subgrupo objetivo: ascendidos 0,4796 → **0,4778**; arranque 0,5320 → **0,5240**.
+
+Y el diagnóstico decisivo: el Elo sembrado es **peor como predictor por sí solo**, con AUC
+local en partidos de ascendidos cayendo de 0,6964 a 0,6620 — o sea que la hipótesis es falsa,
+no la implementación. La explicación probable es que el 1500 de un ascendido no era
+ignorancia sino *shrinkage*, y `features/cold_start.py` ya cubría esa información con un
+prior ajustado.
+
+La infraestructura queda en el repo detrás de `features.elo_sembrado_con_historia: false`,
+porque la Fase 2 la usa. Detalle completo en `training/README.md` y en `attempts.jsonl`.
+
+> **Lo que la fase sí dejó, y vale:** el protocolo funcionó. Se etiquetó el estado previo, se
+> midió con control de semillas, se miró el subgrupo, se restauró el Gold anterior y se
+> registró el rechazo. La versión sembrada quedó archivada, así que la Fase 2 puede volver a
+> ella sin recalcular nada.
+
+<details>
+<summary>El planteo original de la fase</summary>
+
+#### Historia profunda para los ratings (no como filas de entrenamiento)
 
 **Qué NO es:** entrenar el clasificador con partidos de 2006. Cambió el fútbol, cambiaron los
 planteles, y las features ricas (xG, FPL) no existen ahí. Descartado.
@@ -202,6 +229,8 @@ Dos cosas que arregla:
    ascendidos — en vez de 1500 y el parche de `features/cold_start.py`.
 
 **Subgrupo objetivo:** partidos de equipos ascendidos, y partidos de GW ≤ 5.
+
+</details>
 
 ### Fase 2 — pi-ratings
 

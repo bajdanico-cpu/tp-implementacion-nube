@@ -23,7 +23,7 @@ from common.storage import archivar, read_table, write_table
 from eda.baselines import odds_a_probabilidades
 from features import (cold_start, competencias as fcomp, elo, h2h,
                       opta as fopta, player_agg, spec, team_form as tf)
-from transform import leakage
+from transform import historia as historia_mod, leakage
 
 log = get_logger(__name__)
 
@@ -128,7 +128,10 @@ def construir(objetivos: pd.DataFrame | None = None,
     cols_cmp = [c for c in h_cmp.columns if c not in ("season", "team_short", "hist_kickoff")]
     cols_pln = ["mins_hhi", "continuidad_plantel"]
 
-    h_elo = elo.construir(largo)
+    # La historia profunda (Fase 1) siembra el rating: sin ella el Elo arranca en 1500 en
+    # 2022-23 y un ascendido entra siempre generico. Es OPCIONAL -- si la tabla no esta
+    # construida el pipeline corre igual, con el comportamiento anterior.
+    h_elo = elo.construir(largo, _historia_ratings())
 
     bloques = [
         _pegar_bloque(obj_lado, h_gen, ["team_short"], cols_gen, con_kickoff=True),
@@ -306,6 +309,32 @@ def _diferenciales(gold: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Controles — corren ANTES de escribir, no en los tests
 # ---------------------------------------------------------------------------
+
+def _historia_ratings() -> pd.DataFrame | None:
+    """`fact_match_historico` si el sembrado esta ACTIVADO y la tabla existe.
+
+    Dos condiciones, y la primera es la que importa: `features.elo_sembrado_con_historia`
+    esta en `false` porque la Fase 1 lo midio y no paso. Que la tabla exista no alcanza —
+    si alcanzara, cualquier reconstruccion de Gold cambiaria en silencio los valores del
+    Elo y el Gold vigente dejaria de coincidir con el modelo que esta sirviendo. El
+    `feature_set_version` no lo detectaria: es un hash de los NOMBRES de las features, y
+    los nombres no cambian.
+    """
+    from common.storage import table_exists
+
+    if not CFG.elo_sembrado:
+        return None
+    if not table_exists(historia_mod.TABLA, layer="silver"):
+        log.info("Sin %s: el Elo arranca sin sembrar (comportamiento previo a la Fase 1). "
+                 "Para sembrarlo: python -m ingestion.bronze_fd_historia && "
+                 "python -m transform.historia", historia_mod.TABLA)
+        return None
+    h = read_table(historia_mod.TABLA, layer="silver")
+    log.info("Historia para el rating: %s partidos, %s a %s, divisiones %s",
+             f"{len(h):,}", h["match_date"].min().date(), h["match_date"].max().date(),
+             sorted(h["division"].unique()))
+    return h
+
 
 def _validar(gold: pd.DataFrame, fixtures: pd.DataFrame) -> None:
     leakage.assert_no_banned_columns(gold, context=TABLA)

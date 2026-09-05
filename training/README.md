@@ -76,6 +76,77 @@ Y `xgb_rf` **iguala o supera la accuracy del mercado (0,505 vs 0,495) sin usar c
 que era la comparación honesta. En log-loss el mercado sigue adelante (1,012 vs 1,029):
 está mejor calibrado, aunque acierte menos veces el argmax.
 
+## Fase 1: sembrar el Elo con veinte años de historia. Medido, y NO entra
+
+    python -m ingestion.bronze_fd_historia   # 81 archivos, E0/E1/E2 desde 2000-01
+    python -m transform.historia             # fact_match_historico: 37.840 partidos
+    python -m training.comparar_gold --banco-b
+
+**La hipotesis.** El Elo arranca a todos en 1500 en 2022-23 y tarda media temporada en
+converger — con `dif_elo` siendo la feature mas importante del modelo, esa media temporada
+de train es ruido. Y un ascendido entra **siempre** en 1500, que es el fallo medido en la
+GW1 de 2026-27: los dos errores mas caros fueron ascendidos ganando de local (HUL-MUN,
+IPS-SUN). Con E1 y E2 de football-data, un ascendido podria entrar con el rating que se gano
+en el Championship.
+
+**Se construyo entero.** 37.840 partidos de tres divisiones, 2000-08-12 a 2026-09-02, 101
+equipos. Y funciona como sistema: la separacion entre divisiones **emerge sola** de los
+ascensos y descensos, sin ningun offset puesto a mano — la Premier queda en ~1900-2100 y las
+de abajo mas abajo. Los ascendidos entran donde corresponde (HUL 1716, IPS 1806, COV 1809)
+en vez de en un 1500 generico.
+
+### El resultado: no mejora, y empeora donde apuntaba
+
+| | delta RPS | delta accuracy |
+|---|---|---|
+| **Banco A** (holdout, 5 semillas) | **+0,0010** ± 0,0011, rango [−0,0008, +0,0020] | −0,0005 ± 0,0104 |
+| **Banco B** (walk-forward, 3 semillas) | **+0,0006** | +0,0035 |
+
+En RPS **menos es mejor**, asi que los dos deltas van en contra. El de Banco A cruza el cero
+entre semillas, o sea que ni siquiera se distingue del ruido, y McNemar da p entre 0,146 y
+1,000 en las cinco corridas. Banco C no aporta: la GW3 no habia terminado y las fechas 1 y 2
+ya no son muestra ciega.
+
+Y el criterio del subgrupo —donde tenia que verse el efecto— tambien falla:
+
+| subgrupo | n | base | sembrado |
+|---|---|---|---|
+| ascendidos | 108 | 0,4796 | **0,4778** |
+| arranque (GW ≤ 5) | 50 | 0,5320 | **0,5240** |
+| resto | 236 | 0,4958 | 0,4958 |
+
+### Y el diagnostico que distingue "hipotesis falsa" de "implementacion mala"
+
+El Elo sembrado es **peor como predictor por si solo**, medido sobre el holdout sin modelo
+de por medio:
+
+| | AUC local, todos | AUC local, ascendidos |
+|---|---|---|
+| sin sembrar | 0,6730 | **0,6964** |
+| sembrado | 0,6629 | **0,6620** |
+
+Cae **3,4 puntos de AUC justo en los ascendidos**, que eran la razon de ser de la fase. Y no
+es un artefacto de escala: el desvio de `dif_elo` practicamente no cambia (145,4 → 146,9).
+
+**Por que, probablemente.** El 1500 de un ascendido no es ignorancia, es *shrinkage*: "no se
+nada de este equipo, asumilo promedio". El rating del Championship lo reemplaza por una
+creencia **confiada y mal calibrada** — el nivel de una division no se traduce linealmente a
+la otra. Y encima la informacion no faltaba: `features/cold_start.py` ya aporta un prior de
+ascendidos **ajustado sobre los datos**. La fase reemplazo un "no se" bien calibrado por un
+"se, y me equivoco".
+
+### Que queda en el repo
+
+Todo. La ingesta, `fact_match_historico`, el sembrado y `training/comparar_gold.py` siguen
+ahi, detras de `features.elo_sembrado_con_historia: false`. La **Fase 2 (pi-ratings)** usa la
+misma historia, y la pregunta que deja abierta es interesante: quiza el problema no sea
+sembrar sino *que* se siembra — un rating con local y visitante separados, aprendido de la
+diferencia de goles, puede transferir entre divisiones mejor que un Elo escalar.
+
+El registro del rechazo, con todos los numeros, esta en `models/xgb_gbt/attempts.jsonl`.
+
+---
+
 ## RPS: la metrica que sabe que las clases estan ORDENADAS
 
 El log-loss mira **una sola cosa**: la probabilidad que le pusiste al resultado que salio.

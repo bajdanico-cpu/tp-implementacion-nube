@@ -105,6 +105,29 @@ class Config:
     def football_data(self) -> dict[str, Any]:
         return self.raw["sources"]["football_data"]
 
+    @property
+    def fd_historia(self) -> dict[str, Any]:
+        """Historia profunda de football-data: SOLO para sembrar ratings, nunca train."""
+        return self.football_data.get("historia", {}) or {}
+
+    def seasons_historia(self) -> list[str]:
+        """Temporadas de la historia profunda, desde `historia.desde` hasta la actual.
+
+        Es un rango APARTE de `seasons_to_ingest()` a proposito: ampliar la ventana de
+        ingesta normal arrastraria a Silver y a los joins con FPL, que no existen para
+        2005. Aca solo se piden resultados crudos.
+        """
+        desde = self.fd_historia.get("desde")
+        if not desde:
+            return []
+        return [season_from_start_year(y)
+                for y in range(season_start_year(desde),
+                               season_start_year(self.current_season) + 1)]
+
+    @property
+    def divisiones_historia(self) -> list[str]:
+        return list(self.fd_historia.get("divisiones", ["E0"]))
+
     # ---------- storage ----------
 
     @property
@@ -161,6 +184,15 @@ class Config:
         a NaN y se marca con la flag `xg_available`.
         """
         return self.raw["features"].get("xg_min_gameweek", {})
+
+    @property
+    def elo_sembrado(self) -> bool:
+        """Si el Elo arranca sembrado con la historia profunda. Ver config.yaml.
+
+        Es una decision MEDIDA, no un default: la Fase 1 la probo y no paso. Se deja
+        apagada para que el Gold vigente siga siendo el del modelo en produccion.
+        """
+        return bool(self.raw["features"].get("elo_sembrado_con_historia", False))
 
     @property
     def podado_top_n(self) -> int:

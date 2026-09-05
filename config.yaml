@@ -52,6 +52,26 @@ sources:
     # a otra división. Sin esta validación entran datos de National League en silencio.
     validate_division: true
 
+    # --- Historia profunda: SOLO para sembrar los ratings (Fase 1) ---
+    #
+    # NO entra al entrenamiento. Un partido de 2005 no tiene xG ni datos de FPL, y el
+    # futbol de entonces no predice el de hoy: usarlo como fila de train seria un error.
+    # Lo que si aporta es lo que un rating necesita y hoy no tiene:
+    #
+    #   1. BURN-IN. Hoy el Elo arranca a todos en 1500 en 2022-23 y tarda media temporada
+    #      en converger: la primera temporada de train usa una feature que todavia no
+    #      significa nada.
+    #   2. LOS ASCENDIDOS. Con E1/E2 un equipo que sube entra con el rating que se gano en
+    #      el Championship, en vez de 1500 mas el parche de `features/cold_start.py`. Es el
+    #      fallo medido en la GW1 de 2026-27 (HUL-MUN, IPS-SUN).
+    #
+    # Las divisiones NO se calibran con un offset a mano: el Elo es global y la separacion
+    # entre divisiones EMERGE de ascensos y descensos, que son los unicos eventos que
+    # conectan los grupos. Por eso hace falta profundidad: se mueven 3+3 equipos por año.
+    historia:
+      desde: "2000-01"
+      divisiones: ["E0", "E1", "E2"]
+
 storage:
   # "local" hoy; "gcs" / "bigquery" cuando haya proyecto GCP.
   # La lógica de negocio no cambia: todo el I/O pasa por common/storage.py.
@@ -86,6 +106,23 @@ features:
   # partidos de una misma fecha se predicen con la misma informacion. Es el criterio mas
   # conservador y el que hace que las dobles fechas (85 casos) no filtren.
   corte: "inicio_de_fecha"
+
+  # ¿El Elo se siembra con la historia profunda de football-data (E0/E1/E2 desde 2000-01)?
+  #
+  # **Apagado, y no por defecto: por medicion.** La Fase 1 lo construyo, lo midio con el
+  # protocolo de docs/PLAN-MEJORAS.md y NO paso. Detalle en `training/README.md` y en
+  # `models/xgb_gbt/attempts.jsonl`; el resumen es que el Elo sembrado resulta PEOR como
+  # predictor por si solo, y peor justo en los ascendidos (AUC local 0,696 -> 0,662), que
+  # eran la razon de ser de la fase.
+  #
+  # La capacidad queda: la ingesta, `fact_match_historico` y el sembrado siguen ahi, y la
+  # Fase 2 (pi-ratings) los necesita. Lo que no queda es prendido, porque el Gold vigente
+  # tiene que ser el mismo con el que se entreno el modelo que sirve.
+  #
+  #     python -m ingestion.bronze_fd_historia && python -m transform.historia
+  #     # poner en true, reconstruir Gold con TP_VERSION_LABEL, y medir con:
+  #     python -m training.comparar_gold --banco-b
+  elo_sembrado_con_historia: false
 
   # Cuantas features conserva el set `podado`, elegidas por importancia de ganancia
   # sobre el resultado del set `completo`. No se eligen a mano.
