@@ -186,6 +186,11 @@ class Config:
         return self.raw["features"].get("xg_min_gameweek", {})
 
     @property
+    def estilos_activo(self) -> bool:
+        """Si entran las interacciones de matchup (Fase 4). Ver config.yaml."""
+        return bool(self.raw["features"].get("estilos_activo", False))
+
+    @property
     def valores_activo(self) -> bool:
         """Si entran las features de valor de plantel (Transfermarkt). Ver config.yaml."""
         return bool(self.raw["features"].get("valores_activo", False))

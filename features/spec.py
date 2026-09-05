@@ -501,6 +501,22 @@ VALORES_DESC = (
 )
 
 
+def _estilos() -> list[Feature]:
+    """Fase 4: los cruces de estilo. Son de PARTIDO, no por lado."""
+    if not CFG.estilos_activo:
+        return []
+    from features import estilos as est
+
+    fs = [Feature(n, "Estilos", "derivada", f"{a} x {b} — {d}")
+          for n, (a, b, d) in est.MATCHUPS.items()]
+    fs.append(Feature(
+        est.ASIMETRIA, "Estilos", "derivada",
+        "|local_posesion_u5 - visita_posesion_u5|: cuan desparejo es el partido en estilo. "
+        "Es el VALOR ABSOLUTO, no la resta: dos equipos que quieren la pelota producen un "
+        "partido distinto de uno que la quiere y otro que la cede, y el signo no los separa"))
+    return fs
+
+
 def _valores() -> list[Feature]:
     if not CFG.valores_activo:
         return []
@@ -552,7 +568,7 @@ def _build() -> list[Feature]:
     out: list[Feature] = []
     for fn in (_forma, _forma_temp, _forma_cond, _campeonato, _h2h,
                _continuidad, _estado, _competencias, _opta, _contexto, _dificultad,
-               _valores, _pi_partido, _diferenciales):
+               _valores, _estilos, _pi_partido, _diferenciales):
         out.extend(fn())
     nombres = [f.nombre for f in out]
     dupes = {n for n in nombres if nombres.count(n) > 1}

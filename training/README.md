@@ -76,6 +76,52 @@ Y `xgb_rf` **iguala o supera la accuracy del mercado (0,505 vs 0,495) sin usar c
 que era la comparación honesta. En log-loss el mercado sigue adelante (1,012 vs 1,029):
 está mejor calibrado, aunque acierte menos veces el argmax.
 
+## Fase 4: interacciones de matchup. Informacion nueva, sin señal
+
+    python -m training.comparar_gold --base 20260901T233127Z --banco-b
+
+**La hipotesis.** Hay estilos que le ganan a otros mas de lo que predice la diferencia de
+nivel: un equipo que entra al area contra uno que defiende lejos del arco, uno de posesion
+contra uno que roba arriba. Gold tenia tres formas de mirar a los dos equipos y **ninguna es
+un matchup**: `local_X`, `visita_X` y `dif_X` (que resta LA MISMA columna). Un matchup cruza
+una estadistica de un equipo con **otra, distinta**, del rival.
+
+Siete cruces elegidos por teoria sobre las features de Opta, mas la asimetria de posesion
+—en valor absoluto, que no es `dif_posesion`—. Version barata a proposito: clusterizar en
+~5 estilos daria 25 celdas sobre 1.140 partidos, que es el regimen donde aparece un patron
+espurio.
+
+### El resultado: el caso mas cerrado de las cuatro fases
+
+| | delta RPS | delta accuracy |
+|---|---|---|
+| **Banco A** (5 semillas) | **+0,0003** ± 0,0011, rango [−0,0014, +0,0016] | +0,0016 ± 0,0055 |
+| **Banco B** (3 semillas) | **+0,0002** | **+0,0079**, y las **tres** semillas a favor |
+
+Y el subgrupo `resto` —los partidos entre equipos establecidos, que es donde vive un choque
+de estilos— sube de 0,4958 a **0,5025**, el unico subgrupo que mejora en las cuatro fases.
+
+**Se rechaza igual**, porque la metrica primaria cruza el cero en los dos bancos. Y vale la
+pena decirlo sin maquillar: **si la metrica primaria hubiera sido accuracy en vez de RPS, la
+conclusion podria haber sido otra.** Es exactamente para esto que el criterio se fija antes
+de correr — elegir la metrica despues de ver los numeros es como se llega a un +0,0079 que
+no existe.
+
+### El diagnostico, que es el opuesto al de la Fase 5
+
+| | ¿el modelo las usa? | ¿son redundantes? |
+|---|---|---|
+| **Fase 5** (valor de plantel) | **si**, 8,4 % de la ganancia, sexta de 274 | **si**, 0,73 con `dif_elo` |
+| **Fase 4** (matchups) | **no**, 2,6 % contra 3,1 % que le tocaria | **no**: `mu_asimetria_posesion` da 0,013 con `dif_posesion_u5` y −0,021 con `dif_elo` |
+
+Los ocho terminos rankean entre el puesto **78 y el 249 de 262**. Son informacion **nueva**
+—ortogonal a todo lo que ya habia— y el modelo no encuentra señal en ellos.
+
+Es el resultado mas limpio posible para descartar la hipotesis a esta escala: no es que la
+informacion estuviera repetida, es que no hay señal que extraer con 1.004 filas.
+
+---
+
 ## Fase 5: valor de plantel real (Transfermarkt). Se usa mucho, y no agrega
 
     python -m ingestion.bronze_transfermarkt   # bucket publico, sin credenciales

@@ -404,7 +404,34 @@ temporada.
 
 </details>
 
-### Fase 4 — Estilos e interacciones de matchup
+### Fase 4 — Estilos e interacciones de matchup · ❌ RECHAZADA (05/09/2026)
+
+**No entra, y es el caso más cerrado de las cuatro.** Siete cruces de estilo sobre las
+features de Opta, más la asimetría de posesión.
+
+- Banco A: delta RPS **+0,0003** ± 0,0011, cruza el cero; accuracy +0,0016.
+- Banco B: delta RPS +0,0002, pero accuracy **+0,0079 con las tres semillas a favor**.
+- Subgrupo `resto` (equipos establecidos, donde vive un choque de estilos): 0,4958 →
+  **0,5025**, el único subgrupo que mejora en las cuatro fases.
+
+Se rechaza porque la métrica primaria cruza el cero. **Si la primaria hubiera sido accuracy,
+la conclusión podría haber sido otra** — y es exactamente para eso que el criterio se fija
+antes de correr.
+
+Diagnóstico, opuesto al de la Fase 5: las features son **ortogonales**
+(`mu_asimetria_posesion` da 0,013 con `dif_posesion_u5` y −0,021 con `dif_elo`) y el modelo
+**no las usa** (2,6 % de la ganancia contra 3,1 % proporcional; ranks 78-249 de 262).
+Información nueva sin señal, no información repetida.
+
+Un seguimiento legítimo sería **más semillas** — pero decidido y pre-registrado, no porque el
+número quedó cerca.
+
+Queda detrás de `features.estilos_activo: false`.
+
+<details>
+<summary>El planteo original de la fase</summary>
+
+#### Estilos e interacciones de matchup
 
 La hipótesis: el estilo A le gana al B más de lo que predicen sus ratings.
 
@@ -421,6 +448,8 @@ Por eso la versión barata primero: en vez de clusterizar estilos, **media docen
 de matchup explícitos y teóricos** sobre las features de Opta que ya están (centros del local
 × duelos aéreos del visitante, altura de presión del local × precisión de pase del visitante).
 Pocos parámetros, interpretables, y se testean de a uno con `training/ablacion.py`.
+
+</details>
 
 ---
 

@@ -109,6 +109,9 @@ python -m training.comparar_gold --banco-b                 # dos versiones de Go
 python -m ingestion.bronze_transfermarkt                   # bucket publico, sin credenciales
 python -m transform.valores                                # 24.595 valuaciones fechadas
 
+# 5 bis 4. Interacciones de matchup (Fase 4 — medida y rechazada)
+#   se activan con features.estilos_activo en config.yaml y se miden con comparar_gold
+
 # 5 ter. Versionado de Silver y Gold — nada se pisa, nunca
 python -m common.versiones                                 # vigente + historico
 python -m common.versiones --snapshot "antes de X"         # congela lo vigente, con nombre

@@ -23,7 +23,7 @@ from common.storage import archivar, read_table, write_table
 from eda.baselines import odds_a_probabilidades
 from features import (cold_start, competencias as fcomp, elo, h2h,
                       opta as fopta, pi_ratings, player_agg, spec, team_form as tf,
-                      valores as fval)
+                      valores as fval, estilos as fest)
 from transform import historia as historia_mod, leakage, valores as valores_mod
 
 log = get_logger(__name__)
@@ -224,6 +224,10 @@ def construir(objetivos: pd.DataFrame | None = None,
     if con_target:
         gold = _target_y_mercado(gold, matches, largo)
     gold = _dificultad(gold, fixtures)
+    # Fase 4: los cruces de estilo. Van DESPUES de que Opta esta pegado y antes de los
+    # diferenciales, porque consumen columnas `local_*`/`visita_*` ya armadas.
+    if CFG.estilos_activo:
+        gold = fest.construir(gold)
     gold = _pi_partido(gold)
     gold = _diferenciales(gold)
 
