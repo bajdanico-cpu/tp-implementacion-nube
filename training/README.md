@@ -76,6 +76,67 @@ Y `xgb_rf` **iguala o supera la accuracy del mercado (0,505 vs 0,495) sin usar c
 que era la comparación honesta. En log-loss el mercado sigue adelante (1,012 vs 1,029):
 está mejor calibrado, aunque acierte menos veces el argmax.
 
+## Fase 2: pi-ratings. La localia NO es un rasgo del equipo
+
+    python -m features.pi_ratings --ajustar
+    python -m training.comparar_gold --base 20260901T233127Z --banco-b
+
+**La hipotesis.** En `features/elo.py` la ventaja de local es `VENTAJA_LOCAL = 65.0`: el
+mismo numero para los veinte equipos, todas las temporadas. Los pi-ratings (Constantinou &
+Fenton 2013) le dan a cada equipo **dos** ratings —uno de local y otro de visitante— y la
+diferencia entre ellos *es* su ventaja de localia, aprendida de sus resultados. Ademas
+aprenden de la **diferencia de goles** y no del resultado: ganar 1-0 al que ibas a golear
+baja el rating. Es la familia que gano las dos Soccer Prediction Challenges.
+
+Se implemento completo, con `lambda` y `gamma` ajustados **dentro del train** por error de
+goles: MAE **1,3839** contra 1,4833 de la vara trivial de predecir siempre 0. (La primera
+grilla tenia el optimo en el borde —0,10 / 0,7—; extendida, el optimo queda interior en
+**lambda=0,20, gamma=0,70**. Un minimo en el borde no es un minimo, es una grilla corta.)
+
+### El resultado: nada, en los dos bancos
+
+| | delta RPS | delta accuracy |
+|---|---|---|
+| **Banco A** (holdout, 5 semillas) | **+0,0002** ± 0,0013, rango [−0,0014, +0,0016] | −0,0026 ± 0,0081 |
+| **Banco B** (walk-forward, 3 semillas) | **+0,0006** | +0,0009 |
+
+Cruza el cero, McNemar p ≥ 0,30 en las cinco semillas, y el subgrupo objetivo empeora
+(ascendidos 0,4796 → 0,4704; arranque 0,5320 → 0,5200).
+
+### Y el diagnostico, que es el resultado que vale
+
+La ventaja de localia **por equipo** parece variar mucho: media 0,524, desvio 0,566, rango
+[−0,62 (Ipswich) a +1,67 (Aston Villa)]. Tentador. Pero la pregunta correcta es si eso
+**persiste**, y la respuesta es no:
+
+| | correlacion entre las dos mitades de los datos |
+|---|---|
+| ventaja de localia por equipo | **r = 0,093** (Spearman 0,02) |
+| nivel del equipo (la vara) | **r = 0,746** |
+
+El metodo detecta persistencia cuando existe —el nivel del equipo la tiene— asi que ese
+0,093 no es falta de potencia. **La dispersion que se ve es ruido de estimacion, no un rasgo
+del club.** Nottingham Forest va de +1,23 a −0,05 entre mitades; Tottenham de +0,90 a −0,37.
+
+O sea que la constante de 65 puntos del Elo, que parecia una simplificacion grosera, **es
+defendible**: con cuatro temporadas no hay evidencia de que la localia sea especifica del
+equipo.
+
+### La tension que vale la pena dejar anotada
+
+El ajuste eligio `gamma = 0,70` y **rechazo `gamma = 1,0`** (1,3956 contra 1,3839), que es
+justo el valor que colapsa los dos ratings en uno y devuelve el sistema a un Elo. O sea que
+separar local y visitante **si** ayuda a predecir la diferencia de goles del proximo partido.
+
+Las dos cosas son compatibles y la explicacion es interesante: la separacion funciona como
+**suavizado adaptativo de corto plazo** —dos ratings se adaptan mas rapido que uno a la
+forma reciente— y no como medicion de un rasgo estable. Sirve para el rating, no alcanza
+para el modelo.
+
+Queda todo detras de `features.pi_ratings_activo: false`.
+
+---
+
 ## El problema de los ascendidos, medido en serio
 
 Se venia citando como "el fallo de la GW1 de 2026-27": los dos errores mas caros fueron

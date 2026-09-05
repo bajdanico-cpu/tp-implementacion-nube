@@ -232,7 +232,28 @@ Dos cosas que arregla:
 
 </details>
 
-### Fase 2 — pi-ratings
+### Fase 2 — pi-ratings · ❌ RECHAZADA (05/09/2026)
+
+**No entra.** Implementada completa, con λ=0,20 y γ=0,70 ajustados dentro del train (MAE
+1,3839 goles contra 1,4833 de la vara trivial). Ninguno de los tres criterios:
+
+- Banco A: delta RPS **+0,0002** ± 0,0013, cruza el cero; McNemar p ≥ 0,30 en las 5 semillas.
+- Banco B: delta RPS **+0,0006**.
+- Subgrupo objetivo: ascendidos 0,4796 → **0,4704**; arranque 0,5320 → **0,5200**.
+
+Y el diagnóstico que la cierra: **la ventaja de localía por equipo no persiste**, r = 0,093
+entre las dos mitades de los datos, contra r = 0,746 de la misma prueba sobre el nivel del
+equipo. La dispersión observada es ruido de estimación, no un rasgo del club — o sea que la
+constante `VENTAJA_LOCAL = 65` del Elo, que parecía una simplificación grosera, es
+defendible con los datos que hay.
+
+Detalle en `training/README.md`, incluida la tensión de que el ajuste sí rechaza γ=1,0.
+Queda detrás de `features.pi_ratings_activo: false`.
+
+<details>
+<summary>El planteo original de la fase</summary>
+
+#### pi-ratings
 
 Cada equipo con **dos** ratings: local y visitante. Se actualizan con el error en diferencia
 de goles, amortiguado. Dos parámetros: `λ` (cuánto se corrige el rating que jugó) y `γ`
@@ -243,6 +264,8 @@ para los 20 equipos**. Con pi-ratings pasa a ser una propiedad medida de cada cl
 
 Referencia: Constantinou & Fenton (2013). El mejor modelo ML de la Soccer Prediction
 Challenge 2023 fue CatBoost sobre pi-ratings.
+
+</details>
 
 ### Fase 3 — Ratings de ataque y defensa (Berrar)
 
@@ -259,6 +282,104 @@ rating de mediocampo vale. Si no, es `dif_elo` disfrazado.
 > Ojo con la asimetría: ataque y defensa tienen base observable (goles marcados y concedidos,
 > atribuibles por separado). **Mediocampo no**: no hay "goles de mediocampo". Ese rating se
 > apoya en el puntaje de FPL, que es un constructo, no una medición.
+
+### Fase 5 — Inversión del plantel: el dato que sí existe para un ascendido
+
+> Idea de Nico (05/09/2026). Agregada después de medir el problema de los ascendidos y ver
+> que lo único que sobrevive al escrutinio es que **el mercado tiene información de plantel
+> que nosotros no**: altas, bajas, lesiones, precios de transferencia.
+
+**La intuición.** Un ascendido es el equipo con mayor rotación de plantel de la liga, y casi
+todas nuestras features salen del historial de sus jugadores *en Premier*, que no existe.
+Hace falta una medida de **cuánto vale el plantel** que esté disponible el día cero.
+
+**La fuente principal: valores y transferencias reales de Transfermarkt.** Scrapear
+Transfermarkt directamente va contra sus términos y no tiene API pública, pero existe
+**[`dcaribou/transfermarkt-datasets`](https://github.com/dcaribou/transfermarkt-datasets)**
+— un dataset derivado, mantenido y **actualizado semanalmente**, publicado como CSV en
+GitHub y Kaggle. Doce tablas, y las tres que importan acá:
+
+| tabla | qué trae |
+|---|---|
+| `player_valuations` | **520.000+ valuaciones históricas fechadas** |
+| `transfers` | 99.000+ transferencias con monto |
+| `clubs` / `players` | plantel por club y temporada |
+
+**Y cubre el Championship.** Eso es lo decisivo: un ascendido llega con valores de mercado
+reales de *antes* de pisar la Premier, que es exactamente la información que el mercado de
+apuestas tiene y nosotros no. Ninguna otra fuente del proyecto puede dar eso.
+
+Que las valuaciones estén **fechadas** es lo que la hace usable sin leakage: se toma la
+vigente al `corte` de cada partido, por el mismo `merge_asof` que todo lo demás. Hay que
+verificarlo igual, como con cualquier fuente nueva.
+
+**El precio FPL, como análogo barato y como control.** `fact_player_gw.value` ya está
+ingestado —precio FPL por jugador y por fecha, todas las temporadas— y FPL le pone precio a
+todos los jugadores de Premier antes de la primera fecha. No es valor de mercado sino valor
+*fantasy*, así que no reemplaza a Transfermarkt; sirve para (a) tener la feature funcionando
+en un día, sin fuente nueva, y (b) **contrastar**: si las dos versiones dicen lo mismo, la
+señal es robusta; si difieren, la diferencia misma es informativa.
+
+**Medido antes de planificarlo**, con el análogo FPL (suma del precio de los 15 más caros
+por equipo en la GW1,
+z-score dentro de la temporada, contra los puntos finales):
+
+| temporada | r |
+|---|---|
+| 2022-23 | 0,542 |
+| 2023-24 | 0,882 |
+| 2024-25 | 0,665 |
+| 2025-26 | 0,659 |
+| **global** | **0,690** (n=80) |
+
+Y separa exactamente donde hace falta:
+
+| | inversión GW1 (z) | puntos finales |
+|---|---|---|
+| ascendidos (n=9) | **−1,06** | 27,6 |
+| resto (n=71) | +0,13 | 55,6 |
+
+**Qué construir.** Valor del plantel total y **por línea** (arq / def / med / del), en dos
+momentos, con las dos fuentes (Transfermarkt como principal, FPL como análogo):
+
+- **`inv_*_inicial`** — la de la GW1 de cada temporada. Es la información genuinamente
+  nueva: un juicio externo sobre el plantel, disponible antes de cualquier partido.
+- **`inv_*_actual`** y **`inv_*_delta`** — la de la fecha en curso y cuánto se movió desde
+  el arranque. Cubre el refuerzo de mercado de invierno, que es la otra mitad del pedido.
+
+Más los derivados que dan la forma del plantel y no sólo su tamaño: proporción por línea
+(¿el equipo invirtió en defensa o en ataque?), concentración (una estrella o once parejos),
+y la diferencia entre los dos equipos, que es lo que el modelo realmente usa.
+
+Y con Transfermarkt se suma lo que FPL no puede dar: **el gasto neto del mercado de pases**
+(altas menos bajas, del verano y del invierno), que es la medida directa de "cuánto invirtió
+este equipo" que Nico pidió, y que para un ascendido es justamente donde se juega la
+temporada.
+
+**Las advertencias, al frente:**
+
+1. **El precio FPL no es valor de mercado.** Es el valor *fantasy* estimado por FPL: un
+   defensor barato de un equipo ordenado cobra vallas invictas y sube de precio sin que su
+   valor de transferencia se mueva. Correlaciona con calidad, pero es otro constructo — por
+   eso es el análogo, no la fuente.
+1b. **Transfermarkt trae una identidad de club nueva que hay que mapear.** Es exactamente
+   donde el proyecto ya se comió un bug (Coventry / Hull / Ipswich sin historia en la Fase 1
+   por hacer match exacto en vez de usar el resolvedor). El control de "ningún equipo de la
+   ventana se queda sin datos" va desde el primer día, no al final.
+2. **El precio de mitad de temporada se mueve por popularidad**, no sólo por calidad: sube
+   cuando lo compran muchos managers, o sea *después* de que rinda. Riesgo de que
+   `inv_actual` sea un eco tardío de features que ya tenemos. El de la GW1 no tiene ese
+   problema, y es el que carga la hipótesis.
+3. **Deriva de escala entre temporadas** (la media pasa de 48,2 a 51,6): hay que normalizar
+   dentro de cada temporada, nunca usar el valor crudo.
+4. **No es leakage** si se respeta el corte: el precio de la fecha N refleja hasta la N−1, y
+   entra por el mismo `merge_asof` que todo lo demás. Hay que verificarlo igual.
+
+**Subgrupo objetivo:** ascendidos, y arranque de temporada.
+
+> Nota de prioridad: por lo medido, esta fase pinta más fuerte que la Fase 4. Va acá porque
+> Nico pidió seguir el orden planificado, pero si la 2 y la 3 no dan, conviene saltear a
+> ésta antes que a los estilos.
 
 ### Fase 4 — Estilos e interacciones de matchup
 

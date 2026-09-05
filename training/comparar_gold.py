@@ -210,9 +210,15 @@ def banco_b(base: pd.DataFrame, nuevo: pd.DataFrame, modelo: str | None = None,
         for semilla in seeds:
             CFG.raw["training"]["seed"] = semilla
             for nombre, g in (("base", base), ("nuevo", nuevo)):
+                # Las features de ESA version, no las del spec global. Una fase que agrega
+                # columnas deja al Gold base sin ellas, y `walk_forward` toma
+                # `spec.FEATURES` por defecto: sin esto, el Banco B revienta con "faltan 8
+                # features" -- o peor, en otra combinacion, mediria dos sets distintos.
+                feats = [c for c in spec.FEATURES if c in g.columns]
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    wf = evaluate.walk_forward(modelo, info, gold=g, guardar_proba=True)
+                    wf = evaluate.walk_forward(modelo, info, features=feats, gold=g,
+                                               guardar_proba=True)
                 P = np.concatenate([np.asarray(p) for p in wf["proba"]])
                 y = np.concatenate([np.asarray(v) for v in wf["y"]])
                 m = _metricas(P, y)

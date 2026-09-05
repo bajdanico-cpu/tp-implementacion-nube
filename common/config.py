@@ -186,6 +186,21 @@ class Config:
         return self.raw["features"].get("xg_min_gameweek", {})
 
     @property
+    def pi_activo(self) -> bool:
+        """Si los pi-ratings entran al feature set. Apagado por medicion; ver config.yaml."""
+        return bool(self.raw["features"].get("pi_ratings_activo", False))
+
+    @property
+    def pi_lambda(self) -> float:
+        """Tasa de aprendizaje de los pi-ratings. Ajustada sobre train, ver config.yaml."""
+        return float(self.raw["features"].get("pi_lambda", 0.06))
+
+    @property
+    def pi_gamma(self) -> float:
+        """Transferencia local<->visitante de los pi-ratings. gamma=1 los colapsa a un Elo."""
+        return float(self.raw["features"].get("pi_gamma", 0.5))
+
+    @property
     def elo_sembrado(self) -> bool:
         """Si el Elo arranca sembrado con la historia profunda. Ver config.yaml.
 

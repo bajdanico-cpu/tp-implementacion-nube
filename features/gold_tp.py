@@ -22,7 +22,7 @@ from common.logging_setup import get_logger, setup
 from common.storage import archivar, read_table, write_table
 from eda.baselines import odds_a_probabilidades
 from features import (cold_start, competencias as fcomp, elo, h2h,
-                      opta as fopta, player_agg, spec, team_form as tf)
+                      opta as fopta, pi_ratings, player_agg, spec, team_form as tf)
 from transform import historia as historia_mod, leakage
 
 log = get_logger(__name__)
@@ -132,6 +132,8 @@ def construir(objetivos: pd.DataFrame | None = None,
     # 2022-23 y un ascendido entra siempre generico. Es OPCIONAL -- si la tabla no esta
     # construida el pipeline corre igual, con el comportamiento anterior.
     h_elo = elo.construir(largo, _historia_ratings())
+    pi_on = CFG.pi_activo          # Fase 2: apagada por medicion, ver config.yaml
+    h_pi = pi_ratings.construir(largo) if pi_on else None
 
     bloques = [
         _pegar_bloque(obj_lado, h_gen, ["team_short"], cols_gen, con_kickoff=True),
@@ -141,12 +143,16 @@ def construir(objetivos: pd.DataFrame | None = None,
         _pegar_bloque(obj_lado, h_pln, ["team_short"], cols_pln),
         _pegar_bloque(obj_lado, h_elo, ["team_short"], list(elo.COLUMNAS)),
     ]
+    if pi_on:
+        bloques.append(_pegar_bloque(obj_lado, h_pi, ["team_short"],
+                                     list(pi_ratings.COLUMNAS)))
     feats = bloques[0]
     for b in bloques[1:]:
         feats = feats.merge(b, on=CLAVE + ["lado"], validate="one_to_one")
 
     feats = feats.rename(columns={"continuidad_plantel": "continuidad_plantel_u5"})
     cols_lado = (cols_gen + cols_tmp + cols_cnd + cols_cmp + list(elo.COLUMNAS)
+                 + (list(pi_ratings.COLUMNAS) if pi_on else [])
                  + ["mins_hhi", "continuidad_plantel_u5", "hist_kickoff"])
 
     # Descanso: días entre el último partido usado y el que se predice. El calendario se
@@ -210,6 +216,7 @@ def construir(objetivos: pd.DataFrame | None = None,
     if con_target:
         gold = _target_y_mercado(gold, matches, largo)
     gold = _dificultad(gold, fixtures)
+    gold = _pi_partido(gold)
     gold = _diferenciales(gold)
 
     # El prior se ajusta SIEMPRE con las temporadas de train, tambien cuando se esta
@@ -297,6 +304,15 @@ def _dificultad(gold: pd.DataFrame, fixtures: pd.DataFrame) -> pd.DataFrame:
         columns={"team_h_difficulty": "fdr_local", "team_a_difficulty": "fdr_visita"})
     gold = gold.merge(fdr, on=CLAVE, validate="one_to_one")
     gold["fdr_dif"] = gold["fdr_local"] - gold["fdr_visita"]
+    return gold
+
+
+def _pi_partido(gold: pd.DataFrame) -> pd.DataFrame:
+    """La prediccion de los pi-ratings a nivel partido. Ver `spec._pi_partido`."""
+    if not CFG.pi_activo:
+        return gold
+    gold["pi_gd_esperado"] = pi_ratings.gd_esperado(gold["local_pi_home"],
+                                                    gold["visita_pi_away"])
     return gold
 
 

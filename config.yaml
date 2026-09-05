@@ -107,6 +107,35 @@ features:
   # conservador y el que hace que las dobles fechas (85 casos) no filtren.
   corte: "inicio_de_fecha"
 
+  # ¿Entran los pi-ratings al feature set?
+  #
+  # **Apagado por medicion, igual que el sembrado del Elo.** La Fase 2 los construyo y los
+  # midio con el protocolo de docs/PLAN-MEJORAS.md: Banco A delta RPS +0,0002 +-0,0013
+  # (cruza el cero), Banco B +0,0006, y el subgrupo de ascendidos empeora. El diagnostico
+  # que lo cierra esta en `training/README.md`: la ventaja de localia POR EQUIPO no
+  # persiste (r=0,093 entre mitades de los datos), asi que la premisa de la fase es falsa.
+  #
+  # El codigo, los tests y el ajuste quedan: `python -m features.pi_ratings --ajustar`.
+  pi_ratings_activo: false
+
+  # --- pi-ratings (Fase 2): un rating de LOCAL y otro de VISITANTE por equipo ---
+  #
+  # Constantinou & Fenton (2013). Arregla dos cosas que el Elo de este proyecto no puede:
+  # la ventaja de localia deja de ser la constante `VENTAJA_LOCAL = 65` igual para los
+  # veinte equipos, y el aprendizaje pasa a ser sobre la DIFERENCIA DE GOLES en vez del
+  # resultado. `gamma` es cuanto de lo aprendido de local se transfiere al rating de
+  # visitante: con gamma=1 los dos ratings colapsan a uno solo y el sistema vuelve a ser
+  # un Elo.
+  #
+  # Los dos salen de `python -m features.pi_ratings --ajustar`, que barre una grilla chica
+  # y elige por error de goles SOLO sobre las temporadas de train. Al Banco A llega una
+  # sola configuracion: el holdout decide si la fase entra, no cual de sus variantes.
+  # Ajustados sobre las temporadas de train (MAE 1,3839 goles contra 1,4833 de la vara
+  # trivial de predecir siempre 0). El optimo es INTERIOR a la grilla: la primera version
+  # llegaba solo hasta 0,10/0,7 y caia justo en la esquina.
+  pi_lambda: 0.20
+  pi_gamma: 0.70
+
   # ¿El Elo se siembra con la historia profunda de football-data (E0/E1/E2 desde 2000-01)?
   #
   # **Apagado, y no por defecto: por medicion.** La Fase 1 lo construyo, lo midio con el

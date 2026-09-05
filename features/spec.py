@@ -352,6 +352,14 @@ ESTADO_POR_LADO = (
                     "confiabilidad de la prediccion. No usa las predicciones del modelo "
                     "-- eso seria un bucle de realimentacion -- sino la expectativa del "
                     "Elo, que sale solo de resultados pasados"),
+    ("pi_home", "pi-rating del equipo JUGANDO DE LOCAL, despues de su ultimo partido "
+                "antes del corte (Constantinou & Fenton 2013). Se aprende de la diferencia "
+                "de goles, no del resultado: ganar 1-0 al que ibas a golear baja el rating"),
+    ("pi_away", "el mismo rating pero jugando de VISITANTE. Que sean dos numeros distintos "
+                "es toda la idea: `elo` tiene uno solo y la localia entra como constante"),
+    ("pi_ventaja", "pi_home - pi_away: la ventaja de localia DE ESTE EQUIPO, aprendida de "
+                   "sus resultados. En el Elo esto es `VENTAJA_LOCAL = 65`, el mismo numero "
+                   "para los veinte equipos y todas las temporadas"),
     ("sorpresa_u10", "lo mismo sobre 10 partidos: menos ruidoso, mas estructural. Medido "
                      "en 2025-26, los mas impredecibles fueron CHE, NEW y AVL; los mas "
                      "predecibles BUR y BRE (ser consistentemente malo tambien es "
@@ -363,7 +371,8 @@ def _estado() -> list[Feature]:
     """Elo y estado del equipo: 7 x 2 lados = 14."""
     return [Feature(nombre=f"{lado}_{n}", grupo="Elo y estado", fuente="derivada",
                     formula=f, lado=lado)
-            for lado in LADOS for n, f in ESTADO_POR_LADO]
+            for lado in LADOS for n, f in ESTADO_POR_LADO
+            if CFG.pi_activo or n not in PI_POR_LADO]
 
 
 COMPETENCIAS_POR_LADO = (
@@ -454,8 +463,32 @@ DIFERENCIALES = (
     "pts_camp", "pos_tabla_camp", "ppp_camp", "dias_descanso", "n_hist",
     "elo", "elo_delta_u5", "racha", "sorpresa_u10", "xg_por_tiro_u5",
     "partidos_todo_14d", "copas_acumuladas", "importancia_max", "pts_todo_u5",
-    "prop_tiros_area_u5", "posesion_u5", "quites_u5",
+    "prop_tiros_area_u5", "posesion_u5", "quites_u5", "pi_ventaja",
 )
+
+
+# Las features de la Fase 2. Salen del set entero cuando `pi_ratings_activo` esta en false,
+# asi el `FEATURE_SET_VERSION` vuelve exactamente al del modelo en produccion en vez de
+# quedar en un tercer estado que no corresponde a ningun modelo guardado.
+PI_POR_LADO = {"pi_home", "pi_away", "pi_ventaja"}
+
+
+def _pi_partido() -> list[Feature]:
+    if not CFG.pi_activo:
+        return []
+    """La prediccion del sistema pi, que el `dif_` automatico NO puede derivar.
+
+    `dif_` resta la misma columna de los dos lados (`local_pi_home - visita_pi_home`), y lo
+    que hace falta es cruzar el rating de LOCAL del local con el de VISITANTE del visitante,
+    pasados los dos por la funcion de conversion a goles. Es literalmente lo que el sistema
+    predice, y por eso va explicita.
+    """
+    return [Feature(
+        "pi_gd_esperado", "Estado", "derivada",
+        "diferencia de goles esperada por los pi-ratings: f(local_pi_home) - "
+        "f(visita_pi_away), con f(r) = signo(r)*(10^(|r|/10)-1). Es la prediccion del "
+        "sistema pi a nivel partido. Sobre las temporadas de train da MAE 1,3839 goles "
+        "contra 1,4833 de la vara trivial de predecir siempre 0")]
 
 
 def _diferenciales() -> list[Feature]:
@@ -465,14 +498,14 @@ def _diferenciales() -> list[Feature]:
         grupo="Diferenciales",
         fuente="derivada",
         formula=f"local_{c} - visita_{c}",
-    ) for c in DIFERENCIALES]
+    ) for c in DIFERENCIALES if CFG.pi_activo or c not in PI_POR_LADO]
 
 
 def _build() -> list[Feature]:
     out: list[Feature] = []
     for fn in (_forma, _forma_temp, _forma_cond, _campeonato, _h2h,
                _continuidad, _estado, _competencias, _opta, _contexto, _dificultad,
-               _diferenciales):
+               _pi_partido, _diferenciales):
         out.extend(fn())
     nombres = [f.nombre for f in out]
     dupes = {n for n in nombres if nombres.count(n) > 1}
