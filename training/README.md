@@ -76,6 +76,78 @@ Y `xgb_rf` **iguala o supera la accuracy del mercado (0,505 vs 0,495) sin usar c
 que era la comparación honesta. En log-loss el mercado sigue adelante (1,012 vs 1,029):
 está mejor calibrado, aunque acierte menos veces el argmax.
 
+## Fase 5: valor de plantel real (Transfermarkt). Se usa mucho, y no agrega
+
+    python -m ingestion.bronze_transfermarkt   # bucket publico, sin credenciales
+    python -m transform.valores                # fact_valor_jugador: 24.595 valuaciones
+    python -m training.comparar_gold --base 20260901T233127Z --banco-b
+
+**La hipotesis, y era la mejor de las cinco.** Todas las demas features del proyecto se
+calculan con resultados pasados de Premier — que es exactamente lo que un ascendido no
+tiene. El valor de mercado es la primera fuente con **informacion de afuera**, y cubre el
+Championship: un ascendido llega con valores de antes de pisar la Premier.
+
+Se construyo entera: 24.595 valuaciones fechadas de 2.971 jugadores, los **27 equipos de la
+ventana** cubiertos, de 2004 a 2026-06-03. Veinte features: total, top-11, relativo a la
+liga, y por linea (arq/def/med/del).
+
+### El resultado
+
+| | delta RPS | delta accuracy |
+|---|---|---|
+| **Banco A** (holdout, 5 semillas) | **+0,0003** ± 0,0010, rango [−0,0007, +0,0020] | −0,0074 ± 0,0097 |
+| **Banco B** (walk-forward, 3 semillas) | **−0,0008** | −0,0088 |
+
+Subgrupos: ascendidos 0,4796 → 0,4778; arranque 0,5320 → **0,5080**; resto 0,4958 → 0,4898.
+
+Es **la unica fase donde el RPS del walk-forward mejora** (2 de 3 semillas). Pero el
+criterio pre-registrado es el Banco A, ahi cruza el cero, la accuracy empeora en los dos
+bancos y los tres subgrupos van para atras. Se rechaza.
+
+### El diagnostico, que es distinto al de las otras dos fases
+
+Las features **no se ignoran**. Al contrario:
+
+    las 20 features de valor    8,4% de la ganancia total
+    dif_valor_top11             SEXTA de 274 features
+
+El modelo las usa. Lo que pasa es lo otro:
+
+| | correlacion con `dif_elo` |
+|---|---|
+| `dif_valor_top11` | **0,729** |
+| `dif_valor_rel` | 0,619 |
+
+**Valor de mercado y Elo miden lo mismo** —la calidad del plantel— desde dos angulos
+distintos. El repo ya tenia medido que podar features redundantes no cambia la accuracy y
+que el costo real es **diluir las importancias**; esto es el mismo fenomeno visto desde el
+otro lado: agregar una vista correlacionada tampoco cambia nada, con 1.004 filas de train.
+
+### Y un resultado que vale por si solo
+
+El valor de plantel al 1 de agosto contra los puntos finales de la temporada:
+
+| | r |
+|---|---|
+| valor Transfermarkt (total) | 0,612 |
+| valor Transfermarkt (top 11) | 0,666 |
+| **precio FPL (el analogo gratis, ya ingestado)** | **0,690** |
+
+**El dato real de mercado no le gana al precio de FPL.** Y separa a los ascendidos igual de
+bien (z = −1,09 contra −1,06). Vale la pena decirlo en la defensa: la fuente cara y la
+gratis codifican la misma señal.
+
+### Limitacion de la fuente, para el que la retome
+
+El dataset se congelo el **06/07/2026** (ultima valuacion de nuestros clubes: 03/06/2026).
+Para 2022-23 a 2025-26 esta completo; para 2026-27 **faltan los refuerzos de agosto**. No es
+leakage —es dato viejo, no futuro— pero la feature es mas pobre justo en la temporada en
+curso, que es donde mas hacia falta.
+
+Queda todo detras de `features.valores_activo: false`.
+
+---
+
 ## Fase 2: pi-ratings. La localia NO es un rasgo del equipo
 
     python -m features.pi_ratings --ajustar

@@ -105,6 +105,10 @@ python -m ingestion.bronze_fd_historia                     # E0/E1/E2 desde 2000
 python -m transform.historia                               # 37.840 partidos
 python -m training.comparar_gold --banco-b                 # dos versiones de Gold, Bancos A y B
 
+# 5 bis 3. Valor de plantel real (Fase 5 — medida y rechazada)
+python -m ingestion.bronze_transfermarkt                   # bucket publico, sin credenciales
+python -m transform.valores                                # 24.595 valuaciones fechadas
+
 # 5 ter. Versionado de Silver y Gold — nada se pisa, nunca
 python -m common.versiones                                 # vigente + historico
 python -m common.versiones --snapshot "antes de X"         # congela lo vigente, con nombre

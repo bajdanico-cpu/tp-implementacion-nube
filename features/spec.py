@@ -464,6 +464,8 @@ DIFERENCIALES = (
     "elo", "elo_delta_u5", "racha", "sorpresa_u10", "xg_por_tiro_u5",
     "partidos_todo_14d", "copas_acumuladas", "importancia_max", "pts_todo_u5",
     "prop_tiros_area_u5", "posesion_u5", "quites_u5", "pi_ventaja",
+    # Fase 5: la resta es lo que el modelo realmente usa -- quien tiene mas plantel.
+    "valor_rel", "valor_top11", "valor_def", "valor_del",
 )
 
 
@@ -471,6 +473,39 @@ DIFERENCIALES = (
 # asi el `FEATURE_SET_VERSION` vuelve exactamente al del modelo en produccion en vez de
 # quedar en un tercer estado que no corresponde a ningun modelo guardado.
 PI_POR_LADO = {"pi_home", "pi_away", "pi_ventaja"}
+
+# Fase 5. Mismo tratamiento: se apagan enteras con `features.valores_activo`.
+VALORES_POR_LADO = {"valor_plantel", "valor_top11", "valor_rel", "valor_n",
+                    "valor_arq", "valor_def", "valor_med", "valor_del"}
+
+
+VALORES_DESC = (
+    ("valor_plantel", "valor de mercado del plantel al corte, en euros (Transfermarkt). Es "
+                      "la UNICA feature del proyecto con informacion de afuera: todo lo "
+                      "demas sale de resultados pasados de Premier, que es exactamente lo "
+                      "que un ascendido no tiene"),
+    ("valor_top11", "valor de los once jugadores mas caros. El plantel entero mezcla "
+                    "titulares con juveniles; esto se acerca al equipo que juega"),
+    ("valor_rel", "valor_plantel dividido por la suma de los veinte equipos EN ESE "
+                  "MOMENTO. Es lo que hace la feature comparable entre temporadas: el valor "
+                  "nominal sube todos los años y un arbol que ve el crudo aprende a "
+                  "reconocer la temporada en vez del equipo"),
+    ("valor_n", "cuantos jugadores del plantel tienen valuacion vigente. Da contexto a las "
+                "sumas: 700 M repartidos en 20 no es lo mismo que en 35"),
+    ("valor_arq", "valor de los arqueros"),
+    ("valor_def", "valor de los defensores. Con `valor_del` da la FORMA de la inversion: "
+                  "un equipo que gasto en defensa y otro que gasto en ataque pueden valer "
+                  "lo mismo y jugar distinto"),
+    ("valor_med", "valor de los mediocampistas"),
+    ("valor_del", "valor de los delanteros"),
+)
+
+
+def _valores() -> list[Feature]:
+    if not CFG.valores_activo:
+        return []
+    return [Feature(f"{lado}_{n}", "Valor", "transfermarkt", f, lado=lado)
+            for lado in LADOS for n, f in VALORES_DESC]
 
 
 def _pi_partido() -> list[Feature]:
@@ -491,6 +526,18 @@ def _pi_partido() -> list[Feature]:
         "contra 1,4833 de la vara trivial de predecir siempre 0")]
 
 
+def diferenciales_activos() -> list[str]:
+    """Los diferenciales que EXISTEN con la config actual.
+
+    Una sola fuente de verdad. Antes el filtro de fases apagadas vivia solo aca y
+    `gold_tp._diferenciales` iteraba la tupla cruda: reconstruir Gold con los pi-ratings
+    apagados reventaba con `KeyError: local_pi_ventaja`.
+    """
+    return [c for c in DIFERENCIALES
+            if (CFG.pi_activo or c not in PI_POR_LADO)
+            and (CFG.valores_activo or c not in VALORES_POR_LADO)]
+
+
 def _diferenciales() -> list[Feature]:
     """12 restas explícitas. El árbol podría derivarlas, pero con 1.140 filas ayuda."""
     return [Feature(
@@ -498,14 +545,14 @@ def _diferenciales() -> list[Feature]:
         grupo="Diferenciales",
         fuente="derivada",
         formula=f"local_{c} - visita_{c}",
-    ) for c in DIFERENCIALES if CFG.pi_activo or c not in PI_POR_LADO]
+    ) for c in diferenciales_activos()]
 
 
 def _build() -> list[Feature]:
     out: list[Feature] = []
     for fn in (_forma, _forma_temp, _forma_cond, _campeonato, _h2h,
                _continuidad, _estado, _competencias, _opta, _contexto, _dificultad,
-               _pi_partido, _diferenciales):
+               _valores, _pi_partido, _diferenciales):
         out.extend(fn())
     nombres = [f.nombre for f in out]
     dupes = {n for n in nombres if nombres.count(n) > 1}

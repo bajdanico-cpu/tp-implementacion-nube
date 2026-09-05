@@ -47,6 +47,28 @@ FD_ALIASES: dict[str, str] = {
     "Tottenham": "TOT",  # FPL lo llama "Spurs"
 }
 
+# Transfermarkt usa el nombre OFICIAL completo, que casi nunca coincide con el de FPL.
+# Once de los veintisiete equipos de la ventana no resuelven sin esto, y la normalización no
+# puede arreglarlo: `Manchester` vs `Man`, `Hotspur`, `& Hove Albion` y `Wanderers` no son
+# sufijos genéricos, son parte del nombre.
+#
+# ⚠️ El cruce con esta fuente va por nombre EXACTO. En `player_valuations` conviven
+# `Manchester City` con `Manchester City U21`, `... Reserves` y `... U18`, y —peor—
+# `Newcastle United Jets`, que es un club **australiano**. Un `contains` mete filiales y
+# homónimos en el plantel.
+TM_ALIASES: dict[str, str] = {
+    "AFC Bournemouth": "BOU",
+    "Brighton & Hove Albion": "BHA",
+    "Leeds United": "LEE",
+    "Manchester City": "MCI",
+    "Manchester United": "MUN",
+    "Newcastle United": "NEW",
+    "Nottingham Forest": "NFO",
+    "Tottenham Hotspur": "TOT",
+    "West Ham United": "WHU",
+    "Wolverhampton Wanderers": "WOL",
+}
+
 # Sufijos genéricos que una fuente pone y la otra no ("Ipswich" vs "Ipswich Town").
 # No se quitan a lo bruto: sólo se usan para un segundo intento de match, y si el
 # resultado es ambiguo se rechaza.

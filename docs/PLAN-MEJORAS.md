@@ -283,7 +283,28 @@ rating de mediocampo vale. Si no, es `dif_elo` disfrazado.
 > atribuibles por separado). **Mediocampo no**: no hay "goles de mediocampo". Ese rating se
 > apoya en el puntaje de FPL, que es un constructo, no una medición.
 
-### Fase 5 — Inversión del plantel: el dato que sí existe para un ascendido
+### Fase 5 — Valor de plantel · ❌ RECHAZADA (05/09/2026)
+
+**No entra**, y es la que más dolió porque era la mejor hipótesis: la única fuente con
+información de afuera. Construida entera (24.595 valuaciones fechadas, 27/27 equipos), 20
+features.
+
+- Banco A: delta RPS **+0,0003** ± 0,0010, cruza el cero; accuracy **−0,0074**.
+- Banco B: delta RPS **−0,0008** (la única fase que mejora ahí), accuracy −0,0088.
+- Los tres subgrupos empeoran, incluido el objetivo.
+
+Diagnóstico, distinto al de las otras: **las features sí se usan** —8,4 % de la ganancia,
+`dif_valor_top11` sexta de 274— pero correlacionan **0,729 con `dif_elo`**. Valor de mercado
+y Elo miden lo mismo desde dos ángulos. Y un resultado que vale aparte: el valor real
+predice los puntos finales con r=0,612 (top-11 0,666) contra **r=0,690 del precio FPL que ya
+teníamos gratis**.
+
+Detalle en `training/README.md`. Queda detrás de `features.valores_activo: false`.
+
+<details>
+<summary>El planteo original de la fase</summary>
+
+#### Inversión del plantel: el dato que sí existe para un ascendido
 
 > Idea de Nico (05/09/2026). Agregada después de medir el problema de los ascendidos y ver
 > que lo único que sobrevive al escrutinio es que **el mercado tiene información de plantel
@@ -380,6 +401,8 @@ temporada.
 > Nota de prioridad: por lo medido, esta fase pinta más fuerte que la Fase 4. Va acá porque
 > Nico pidió seguir el orden planificado, pero si la 2 y la 3 no dan, conviene saltear a
 > ésta antes que a los estilos.
+
+</details>
 
 ### Fase 4 — Estilos e interacciones de matchup
 

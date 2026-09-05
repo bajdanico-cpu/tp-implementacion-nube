@@ -107,6 +107,19 @@ features:
   # conservador y el que hace que las dobles fechas (85 casos) no filtren.
   corte: "inicio_de_fecha"
 
+  # ¿Entran las features de valor de plantel (Transfermarkt)? Fase 5.
+  #
+  # Es la unica fuente del proyecto con informacion DE AFUERA: todo lo demas se calcula con
+  # resultados pasados de Premier, que es justo lo que un ascendido no tiene.
+  #     python -m ingestion.bronze_transfermarkt && python -m transform.valores
+  #
+  # **Apagado por medicion**, como las otras dos fases. Banco A delta RPS +0,0003 +-0,0010
+  # (cruza el cero) y accuracy -0,0074; los tres subgrupos empeoran. El diagnostico esta en
+  # `training/README.md`: las features SI se usan -- 8,4% de la ganancia, `dif_valor_top11`
+  # sexta de 274 -- pero correlacionan 0,729 con `dif_elo`. Miden lo mismo que el rating
+  # desde otro angulo, y con 1.004 filas de train una vista correlacionada no agrega.
+  valores_activo: false
+
   # ¿Entran los pi-ratings al feature set?
   #
   # **Apagado por medicion, igual que el sembrado del Elo.** La Fase 2 los construyo y los

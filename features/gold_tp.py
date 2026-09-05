@@ -22,8 +22,9 @@ from common.logging_setup import get_logger, setup
 from common.storage import archivar, read_table, write_table
 from eda.baselines import odds_a_probabilidades
 from features import (cold_start, competencias as fcomp, elo, h2h,
-                      opta as fopta, pi_ratings, player_agg, spec, team_form as tf)
-from transform import historia as historia_mod, leakage
+                      opta as fopta, pi_ratings, player_agg, spec, team_form as tf,
+                      valores as fval)
+from transform import historia as historia_mod, leakage, valores as valores_mod
 
 log = get_logger(__name__)
 
@@ -146,6 +147,12 @@ def construir(objetivos: pd.DataFrame | None = None,
     if pi_on:
         bloques.append(_pegar_bloque(obj_lado, h_pi, ["team_short"],
                                      list(pi_ratings.COLUMNAS)))
+    # Valor de plantel (Fase 5). No es un `merge_asof`: el hecho esta a nivel
+    # jugador-intervalo y hay que AGREGAR los vigentes al corte. Ver `features/valores.py`.
+    if CFG.valores_activo:
+        vals = fval.construir(obj_lado, read_table(valores_mod.TABLA, layer="silver"))
+        bloques.append(vals[CLAVE + ["lado"] + list(fval.COLUMNAS)])
+
     feats = bloques[0]
     for b in bloques[1:]:
         feats = feats.merge(b, on=CLAVE + ["lado"], validate="one_to_one")
@@ -153,6 +160,7 @@ def construir(objetivos: pd.DataFrame | None = None,
     feats = feats.rename(columns={"continuidad_plantel": "continuidad_plantel_u5"})
     cols_lado = (cols_gen + cols_tmp + cols_cnd + cols_cmp + list(elo.COLUMNAS)
                  + (list(pi_ratings.COLUMNAS) if pi_on else [])
+                 + (list(fval.COLUMNAS) if CFG.valores_activo else [])
                  + ["mins_hhi", "continuidad_plantel_u5", "hist_kickoff"])
 
     # Descanso: días entre el último partido usado y el que se predice. El calendario se
@@ -317,7 +325,7 @@ def _pi_partido(gold: pd.DataFrame) -> pd.DataFrame:
 
 
 def _diferenciales(gold: pd.DataFrame) -> pd.DataFrame:
-    for c in spec.DIFERENCIALES:
+    for c in spec.diferenciales_activos():
         gold[f"dif_{c}"] = gold[f"local_{c}"] - gold[f"visita_{c}"]
     return gold
 
