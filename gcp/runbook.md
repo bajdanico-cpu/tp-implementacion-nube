@@ -24,7 +24,59 @@ siguiente y todavía no está.
 export PROJECT_ID="$(gcloud config get-value project)"
 export REGION="us-central1"
 export BUCKET="${PROJECT_ID}-premier-ml"
+# Nuevas variables NACHO. El repo es el Artifact Registry que usamos en clase. No hace falta crearlo
+export REPO="mlops-2026"
+export SERVICE="premier-ml-api"
+export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:latest"
+
 ```
+
+## Levantar API (Serving Local) + (imagen, build y Cloud Run)
+
+Levantar la API local. 
+El puerto 8080 es el que abre el Web Preview de Cloud Shell con un click (botón "Vista previa en la Web", arriba a la derecha)
+```bash
+uvicorn serving.main:app --host 0.0.0.0 --port 8080
+```
+
+Habilitación de las APIS necesarias
+```bash
+gcloud services enable artifactregistry.googleapis.com cloudbuild.googleapis.com run.googleapis.com
+```
+
+Creación de la imagen y publicacion en Artifact Registry
+```bash
+gcloud builds submit --tag "${IMAGE}" .
+```
+
+Desplegar en Cloud Run
+```bash
+gcloud run deploy "${SERVICE}" \
+  --image "${IMAGE}" \
+  --region "${REGION}" \
+  --platform managed \
+  --allow-unauthenticated
+```
+
+Obtener la URL en la que está corriendo el servicio y guardarla como variable de entorno SERVICE_URL
+```bash
+export SERVICE_URL="$(gcloud run services describe "${SERVICE}" --region "${REGION}" --format='value(status.url)')"
+```
+
+Probar el servicio
+```bash
+curl -s "${SERVICE_URL}/health"
+
+curl -s "${SERVICE_URL}/predict/2026-27/4"
+
+curl -s "${SERVICE_URL}/predict/2026-27/4" | jq .
+
+curl -s "${SERVICE_URL}/predict/2026-27/4" \
+  | jq '.predictions[] | {home_short, away_short, p_home, p_draw, p_away, prediccion}'
+
+
+```
+
 
 ## API necesaria
 
