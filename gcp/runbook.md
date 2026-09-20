@@ -78,6 +78,29 @@ curl -s "${SERVICE_URL}/predict/2026-27/4" \
 ```
 
 
+## Smoke test de carga (`scripts/smoke_load.py`)
+
+Dispara N requests GET y reporta throughput y latencia (p50/p95/p99). Sólo usa la
+librería estándar, así que corre en Cloud Shell sin instalar nada. El `max` suele ser el
+cold start de Cloud Run.
+
+La URL base sale, por prioridad, de `--url`, de `SERVICE_URL`, o de la constante del script.
+
+```powershell
+$env:SERVICE_URL = "https://premier-ml-api-tz75rnogkq-uc.a.run.app"
+```
+
+```bash
+python scripts/smoke_load.py                            # 10 requests a /predict/2026-27/4
+python scripts/smoke_load.py --n 20 --concurrency 4
+python scripts/smoke_load.py --endpoint /predict/2026-27/5   # la proxima: corre el modelo
+python scripts/smoke_load.py --url http://127.0.0.1:8080     # contra la API local
+```
+
+> Conviene medir las dos rutas por separado: una fecha **jugada** sale del registro
+> congelado y no toca el modelo; la **próxima** sí lo corre. Son dos latencias distintas y
+> mezclarlas en un mismo percentil no dice nada.
+
 ## API necesaria
 
 Las APIs se habilitan **por proyecto**: un proyecto nuevo nace con casi todo apagado.
@@ -99,12 +122,13 @@ dato y lo transforman desde cero.
 ```bash
 pip install -q -r requirements-cloud.txt
 
-python -m ingestion.run                # ~27 MB de Bronze, append-only
-python -m ingestion.bronze_pulselive   # copas, Europa y stats de Opta
-python -m transform.silver
-python -m transform.competencias
-python -m transform.opta_stats
-python -m features.gold_tp             # el control anti-leakage corre acá adentro
+# La cadena entera, en un comando. Cada corrida deja su JSON en data/pipeline/runs/.
+python -m pipeline.pre_deadline
+
+# Variantes útiles
+python -m pipeline.pre_deadline --dry-run      # valida sin escribir Gold ni el registro
+python -m pipeline.pre_deadline --desde gold   # retoma sin re-bajar el Bronze
+python -m pipeline.pre_deadline --gw 6         # fija la fecha en vez de detectarla
 ```
 
 > **`requirements-cloud.txt` y no `requirements.txt`.** El de local está pinneado a wheels

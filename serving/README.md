@@ -1,6 +1,18 @@
 # Serving
 
-Pendiente.
+**Construido y desplegado.** La API vive en `serving/main.py`, la predicción en
+`predict.py`, el registro en `registro.py` y la regla de decisión en `decision.py`.
+La guía de despliegue es [`gcp/GUIA-DEPLOY.md`](../gcp/GUIA-DEPLOY.md).
+
+El servicio **no construye features**: hace un lookup sobre la tabla Gold, donde el
+pipeline ya las dejó calculadas con el mismo código del entrenamiento. Antes reconstruía
+las 279 features en cada request —25 segundos— y por eso la imagen tenía que llevar las
+ocho tablas de Silver adentro. Hay un test que impide que vuelva a pasar
+(`test_predict_no_lee_silver`).
+
+Una fecha se responde según su estado: jugada devuelve la predicción **congelada** del
+registro más el resultado real, la próxima se predice en vivo, y una que todavía no tiene
+fila responde 409 diciendo cuál sí.
 
 ## Diseño
 

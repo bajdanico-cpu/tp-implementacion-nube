@@ -313,15 +313,16 @@ sólo avisa por warning. Usar `eda.baselines.CLASES_ORD`.
 - [x] **Fase 4** — EDA y baselines
 - [x] **Diseño del caso** — ML Canvas (`ML Canvas esquema.docx`, en la carpeta de la materia)
 - [x] **Fase 5** — Gold + modelo → `features/`, `training/`, `docs/FEATURES.md`
-- [~] **Fase 6** — serving, monitoreo y retraining. **La lógica está escrita y corriendo en
-  local** (`serving/predict.py`, `monitoring/temporada_actual.py`); falta empaquetarla:
-  `serving/app.py` + `Dockerfile`, el backend GCS de `common/storage.py`, e `infra/`
+- [x] **Fase 6** — serving, monitoreo y retraining → `serving/`, `monitoring/`
+- [x] **Fase 7** — despliegue: `GCSBackend`, imagen sin datos, Cloud Run Service + Job,
+  la página en `web/` y la guía en [`gcp/GUIA-DEPLOY.md`](gcp/GUIA-DEPLOY.md)
+- [ ] **Pendiente** — Cloud Scheduler atado al `deadline_time` (ver `infra/README.md`)
 
 ### Dónde está el trabajo, en una tabla
 
 | | |
 |---|---|
-| Tabla Gold | **1.530 filas × 301 columnas**, de las cuales **279 son features** |
+| Tabla Gold | **1.570 filas × 301 columnas**, de las cuales **279 son features**. Incluye la fila de la próxima fecha, sin target: es lo que el serving sirve con un lookup |
 | Diccionario | [`docs/FEATURES.md`](docs/FEATURES.md), **generado** desde `features/spec.py` |
 | Versión del feature set | `v2.3189c9d4.279` — **derivada de un hash** de la lista, no escrita a mano |
 | **Modelo elegido** | **XGBoost** (`xgb_gbt`), entrenado sin las fechas con xG falso |
@@ -331,7 +332,8 @@ sólo avisa por warning. Usar `eda.baselines.CLASES_ORD`.
 | Bloques de features medidos | copas/Europa (24) y Opta (56): **no aportan**, y está publicado |
 | GPU | **Se midió**: pierde 1,7× a 1.140 filas, gana **5,4×** a 114.000 |
 | Ciclo cerrado | predicción registrada → resultado real → métricas, corriendo sobre 2026-27 |
-| Tests | **470**, con pruebas de fuego para cada hallazgo |
+| Tests | **667**, con pruebas de fuego para cada hallazgo |
+| API | `/health`, `/calendario/{season}`, `/predict/{season}/{gw}` y la página en `/` — **p50 47 ms** |
 
 > ⚠️ **Hay dos modelos y sólo uno reporta números.** El de **evaluación**
 > (`training.run --sin-holdout`) entrena hasta 2024-25 y se mide contra 2025-26: es el que
@@ -382,15 +384,18 @@ cd tp-premier-ml
 .\scripts\setup_env.ps1        # crea el venv fuera de OneDrive e instala todo
                                # (en Linux/macOS: bash scripts/setup_env.sh)
 
-python -m ingestion.run              # ~27 MB de Bronze, tarda unos minutos
-python -m ingestion.bronze_pulselive # copas, Europa y las stats de Opta
-python -m transform.silver           # FPL + football-data
-python -m transform.competencias     # fact_match_comp
-python -m transform.opta_stats       # fact_opta_stats
-python -m features.gold_tp           # Gold: 1.530 x 301
-pytest                               # 470 tests
+python -m pipeline.pre_deadline       # toda la cadena: Bronze -> Silver -> Gold -> predicción
+pytest                               # 635 tests
 python -m training.run --sin-holdout # entrena y evalúa (el numero que se reporta)
 ```
+
+**Un comando y no siete.** `pipeline.pre_deadline` encadena las cuatro ingestas, las
+tres transformaciones, Gold y la predicción registrada. No es comodidad: saltearse un
+paso no falla, **degrada en silencio**. El control anti-leakage detecta información del
+futuro y nunca información vieja, así que predecir con un Silver desactualizado devuelve
+diez predicciones de aspecto normal calculadas con la historia que haya quedado. Los
+pasos sueltos siguen existiendo (`python -m transform.silver`, etc.) para depurar, y
+`--desde gold` retoma sin volver a bajar 27 MB.
 
 **`data/` no está en el repo** y no debería estar: se regenera con los dos primeros
 comandos, y así el repo queda liviano y sin datos que puedan quedar desactualizados. Lo

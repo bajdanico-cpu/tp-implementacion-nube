@@ -1,45 +1,53 @@
 # Infraestructura
 
-**El pipeline ya corre en Cloud Shell hasta la predicción de una fecha**, con el dato y los
-artefactos persistidos en un bucket de GCS:
+**El despliegue está construido.** La guía completa, de una cuenta vacía a un servicio
+operado, es [`gcp/GUIA-DEPLOY.md`](../gcp/GUIA-DEPLOY.md).
 
-- [`notebooks/01_gcp_cloudshell.ipynb`](../notebooks/01_gcp_cloudshell.ipynb) — el lab: se
-  clona el repo, se corre celda por celda, cada paso deja un recurso visible en la consola,
-  y **la última celda borra todo** para no dejar nada facturando.
-- [`gcp/paso-a-paso.md`](../gcp/paso-a-paso.md) — el recorrido completo desde crear el
-  proyecto en GCP, para alguien que arranca de cero.
-- [`gcp/runbook.md`](../gcp/runbook.md) — los mismos pasos por terminal, con los chequeos
-  de limpieza.
+```
+        Cloud Storage (gs://$BUCKET)
+        bronze/  silver/  gold/  predicciones/  models/
+              │                          ▲
+              │ lee gold + predicciones  │ escribe todo
+              ▼                          │
+     Cloud Run Service            Cloud Run Job
+     premier-ml-api               premier-ml-pipeline
+     (API + la página)            (python -m pipeline.pre_deadline)
+```
 
-Lo que **todavía no está** es el servicio permanente (Cloud Run), la imagen y los dos jobs
-programados. Por eso el resto de esta página sigue siendo el plan.
+| Recurso | Estado | Para qué |
+|---|---|---|
+| Bucket GCS | **hecho** | Bronze, Silver, Gold, predicciones y modelos |
+| Artifact Registry | **hecho** | la imagen |
+| Cloud Run Service | **hecho** | la API y la página, con escala a cero |
+| Cloud Run Job | **hecho** | el pipeline pre-deadline |
+| Cloud Scheduler | *pendiente* | ver abajo |
+| BigQuery dataset | *descartado* | ver abajo |
 
-## Recursos previstos
+## Tres decisiones que conviene poder defender
 
-| Recurso | Para qué |
-|---|---|
-| Bucket GCS | Bronze (JSON/CSV crudos, append-only) y artefactos de modelo |
-| BigQuery dataset | Silver y Gold |
-| Cloud Run Job — ingesta | disparado por Scheduler, pre-deadline y post-fecha |
-| Cloud Run Service — API | serving del modelo |
-| Cloud Scheduler | los dos cron semanales |
-| Artifact Registry | imágenes de los contenedores |
+**Una sola imagen para el Service y el Job.** Comparten todo el código y sólo cambia el
+comando (`--command python --args -m,pipeline.pre_deadline`). Dos imágenes serían dos
+cosas que se pueden desincronizar, y la que sirve tiene que tener exactamente el mismo
+código de features que la que entrena: es la defensa contra el train/serve skew.
 
-## Qué hace falta para activarlo
+**El dato no va en la imagen.** Antes sí: `COPY models` y `COPY data/silver`. Eso ataba
+tres ciclos de vida distintos —el código cambia cuando cambia la lógica, el dato cada
+fecha, el modelo cuando se reentrena— al mismo artefacto de build, y obligaba a
+redesplegar para predecir una fecha nueva. Hoy se leen del bucket vía `GCSBackend`, y se
+configura con `TP_STORAGE_BACKEND=gcs` sin reconstruir nada.
 
-1. Instalar el SDK de `gcloud` (hoy no está en la máquina).
-2. Completar `storage.gcp` en `config.yaml`: `project_id`, `region`, `bucket`,
-   `bq_dataset`.
-3. Descomentar `google-cloud-storage` y `google-cloud-bigquery` en `requirements.txt`.
-4. Implementar `GCSBackend` en `common/storage.py` — los métodos ya están declarados
-   con la firma correcta.
-5. Cambiar `storage.backend` a `"gcs"`.
+**Dos service accounts.** La API sólo tiene `objectViewer`; el Job tiene `objectAdmin`.
+Con una sola identidad todo andaría igual, y justamente por eso vale nombrarlo: un bug en
+el camino de lectura **no puede** corromper Gold, en vez de simplemente no deber hacerlo.
 
-Ningún paso toca la lógica de ingesta ni de transformación. Ése era el objetivo del
-diseño local-first.
+## Lo que queda
 
-## Costo
+**Cloud Scheduler.** El Job está listo para que lo dispare, pero el disparo correcto va
+atado al `deadline_time` de cada fecha y ése no cae en un día fijo: la Premier mueve
+horarios por TV. Un cron semanal sería una aproximación, y preferimos decirlo antes que
+presentar como automático algo que se desfasa solo.
 
-Cloud Run Jobs cobra por ejecución; con dos disparos semanales el costo es marginal.
-La alternativa (Composer / Airflow administrado) factura 24/7 y no se justifica para
-dos triggers por semana — vale la pena decirlo en la defensa.
+**BigQuery para Silver y Gold: descartado.** Estaba en el plan original. Gold son 1.570
+filas y 1,5 MB; un parquet en el bucket se lee entero en memoria en milisegundos y no
+agrega un servicio más que explicar, configurar y apagar. BigQuery empieza a tener sentido
+con volúmenes que este caso no tiene.

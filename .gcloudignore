@@ -1,6 +1,10 @@
 # Contexto de build para `gcloud builds submit`.
-# Al existir este archivo, gcloud IGNORA .gitignore. Por eso aca NO se excluyen
-# *.parquet ni models/**/*.ubj: la imagen los necesita (ver Dockerfile).
+#
+# Al existir este archivo, gcloud IGNORA .gitignore y usa sólo lo de acá.
+#
+# Antes había que dejar entrar `data/silver` y los `models/**/*.ubj` porque la imagen los
+# horneaba adentro. Ya no: el servicio los lee del bucket, así que el contexto de build
+# es sólo código y baja de ~60 MB a menos de uno.
 
 # Control de versiones y entorno
 .git/
@@ -23,21 +27,16 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 
-# Datos: solo entra data/silver (lo unico que lee /predict).
-# Se listan las carpetas hermanas en vez de excluir data/ entero, porque
-# una carpeta padre excluida no se puede re-incluir.
-data/bronze/
-data/gold/
-data/_versiones/
-data/predicciones/
+# Datos y modelos: viven en el bucket, no en la imagen
+data/
+models/
 
-# Lo que el Dockerfile no copia: pesa y no hace falta para servir
+# Lo que el Dockerfile no copia
 notebooks/
 docs/
 gcp/
 infra/
 tests/
-eda/output/
-training/output/
-features/output/
+scripts/
+eda/
 *.md

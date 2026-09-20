@@ -1,0 +1,35 @@
+# Lo que necesita la IMAGEN que corre en Cloud Run. Mismos pines que requirements.txt.
+#
+# POR QUE NO SE USA requirements.txt DIRECTO
+#
+# Son los mismos pines exactos, pero sin JupyterLab ni matplotlib: uno es el entorno de
+# trabajo y el otro es el artefacto que se despliega. JupyterLab arrastra decenas de
+# dependencias que ningun request usa, y en Cloud Run eso se paga en cada arranque en
+# frio -- que es el numero que la clase 7 pide medir.
+#
+# Los pines NO se relajan. `requirements-cloud.txt` existe para Cloud Shell, que trae
+# otro Python y no tiene wheels cp314; la imagen, en cambio, es `python:3.14-slim`, o sea
+# exactamente el mismo interprete que en local. Ahi el pin al digito se puede sostener, y
+# es lo que hace que el `lib_versions` del metadata.json siga significando algo.
+
+# --- Datos ---
+pandas==3.0.5
+numpy==2.5.2
+pyarrow==25.0.1
+
+# --- Ingesta (las usa el Job del pipeline, que corre con esta misma imagen) ---
+requests==2.34.2
+PyYAML==6.0.3
+
+# --- Modelo ---
+scikit-learn==1.9.0
+scipy==1.18.0
+joblib==1.5.3
+xgboost==3.4.1
+
+# --- Serving ---
+fastapi==0.141.1
+uvicorn==0.41.0
+
+# --- Nube ---
+google-cloud-storage==3.4.1
