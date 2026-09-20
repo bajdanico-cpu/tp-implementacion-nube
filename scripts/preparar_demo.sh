@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Deja todo listo en GCP para la defensa, en un comando.
 #
-#   bash scripts/preparar_demo.sh
+#   bash scripts/preparar_demo.sh              # provisiona todo y deja el estado inicial
+#   bash scripts/preparar_demo.sh --reset      # SOLO vuelve el dato al estado inicial
 #
 # Es idempotente: se puede correr dos veces sin romper nada. Cada paso dice qué hace y
 # sigue de largo si el recurso ya existe.
+#
+# `--reset` existe para poder PROBAR el boton sin gastar la demo. Apretarlo ingesta los
+# resultados de la GW5 y Gold avanza a la GW6; despues de verificar que funciono, este
+# modo vuelve a subir el estado congelado y queda todo como antes. Son unos segundos:
+# son 2 MB de Gold y predicciones.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # QUE DEJA ARMADO, Y POR QUE ASI
@@ -26,6 +32,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
+
+MODO="completo"
+[ "${1:-}" = "--reset" ] && MODO="reset"
 
 # ---------------------------------------------------------------- variables
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
@@ -124,10 +133,17 @@ ok "el Job puede ESCRIBIR el bucket"
 # ---------------------------------------------------------------- 4 · el dato
 titulo "4 · Subiendo el dato congelado (NO se corre el pipeline)"
 if [ "${SUBIR_DATO}" = "si" ]; then
-  gcloud storage rsync -r data/gold         "gs://${BUCKET}/gold"         --quiet
-  gcloud storage rsync -r data/predicciones "gs://${BUCKET}/predicciones" --quiet
+  # En reset se BORRA lo que sobra: el Job dejo un Gold mas nuevo y la prediccion de la
+  # GW6, y un reset a medias deja el bucket contando dos historias distintas.
+  BORRAR=""
+  [ "${MODO}" = "reset" ] && BORRAR="--delete-unmatched-destination-objects"
+
+  # shellcheck disable=SC2086
+  gcloud storage rsync -r data/gold         "gs://${BUCKET}/gold"         ${BORRAR} --quiet
+  # shellcheck disable=SC2086
+  gcloud storage rsync -r data/predicciones "gs://${BUCKET}/predicciones" ${BORRAR} --quiet
   gcloud storage rsync -r models            "gs://${BUCKET}/models"       --quiet
-  ok "gold, predicciones y models subidos"
+  ok "gold, predicciones y models subidos${BORRAR:+ (con borrado de lo que sobraba)}"
 
   # Silver y Bronze los necesita el JOB para no re-descargar cinco temporadas enteras.
   # Sin Bronze, la primera corrida baja todo de nuevo: son minutos de más, justo en vivo.
@@ -144,6 +160,32 @@ if [ "${SUBIR_DATO}" = "si" ]; then
   fi
 else
   aviso "salteado; se asume que el bucket ya tiene el dato"
+fi
+
+# ---------------------------------------------------------------- reset: hasta acá
+if [ "${MODO}" = "reset" ]; then
+  # Se fuerza al servicio a releer Gold en vez de esperar a que venza el TTL de 5 min.
+  SERVICE_URL="$(gcloud run services describe "${SERVICE}" --region "${REGION}" \
+                 --format='value(status.url)' 2>/dev/null || echo '')"
+  if [ -n "${SERVICE_URL}" ]; then
+    gcloud run services update "${SERVICE}" --region "${REGION}" \
+      --update-env-vars "TP_RESET_AT=$(date +%s)" --quiet >/dev/null
+    ok "servicio reiniciado: relee Gold desde el bucket"
+    sleep 5
+    PROX="$(curl -s --max-time 90 "${SERVICE_URL}/health" \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['proxima_predecible'])" \
+            2>/dev/null || echo '?')"
+    if [ "${PROX}" = "5" ]; then
+      ok "estado inicial restaurado: la próxima predecible vuelve a ser la GW5"
+    else
+      aviso "la próxima predecible quedó en '${PROX}', esperaba 5"
+    fi
+    echo
+    echo "  La página: ${SERVICE_URL}"
+  else
+    aviso "el servicio no existe todavía; corré el script sin --reset"
+  fi
+  exit 0
 fi
 
 # ---------------------------------------------------------------- 5 · imagen
@@ -238,6 +280,22 @@ cat <<FIN
 
     5. Cuando termina, la página se recarga sola: la GW5 pasa a tener resultado y
        aparece la GW6 predicha.
+
+  Para PROBAR que el botón funciona sin gastar la demo:
+
+    1. Apretá "Actualizar datos". El Job ingesta la GW5 y Gold avanza a la GW6.
+    2. Verificá que haya andado:
+
+         curl -s ${SERVICE_URL}/health | python3 -m json.tool | grep proxima
+         # tiene que decir 6
+
+    3. Volvé al estado inicial:
+
+         bash scripts/preparar_demo.sh --reset
+
+       Vuelve a subir el Gold y las predicciones congeladas, y reinicia el servicio para
+       que las relea. La próxima predecible vuelve a ser la GW5 y el botón queda otra vez
+       con algo para mostrar.
 
   Para apagar todo después:
 

@@ -158,6 +158,7 @@ footer a{color:var(--pl-magenta)}
   <h2>Fechas</h2>
   <div id="fechas"></div>
   <div id="cabecera"></div>
+  <div id="aviso-fecha"></div>
   <div id="partidos"></div>
 </div>
 
@@ -335,6 +336,10 @@ function marcar(gw) {
 async function fecha(gw) {
   marcar(gw);
   $("#cabecera").innerHTML = "";
+  // Se limpia acá y no en cada rama: el aviso es de LA FECHA, así que no puede
+  // sobrevivir a un cambio de fecha. Antes se insertaba como hermano de #cabecera y
+  // quedaba pegado para siempre en cuanto alguien miraba la GW1.
+  $("#aviso-fecha").innerHTML = "";
   $("#partidos").innerHTML = `<div class="cargando">cargando la fecha ${gw}…</div>`;
 
   const { ok, status, body } = await json(`/predict/${SEASON}/${gw}`);
@@ -358,10 +363,11 @@ async function fecha(gw) {
       modelo <span class="mono">${body.model_version}</span></span>`;
 
   if (reconstruida) {
-    $("#cabecera").insertAdjacentHTML("afterend",
-      `<div class="aviso">Esta fecha no tiene ninguna predicción anterior a su inicio: se
-       muestra la más temprana que hay, que es una reconstrucción y no cuenta como
-       evidencia.</div>`);
+    $("#aviso-fecha").innerHTML =
+      `<div class="aviso"><b>Esta fecha se jugó antes de que el sistema empezara a
+       registrar.</b> Lo que se muestra se calculó después de los partidos, así que no
+       es una predicción sino una reconstrucción: no cuenta como evidencia. Desde la
+       GW2 en adelante, cada fecha tiene su predicción emitida antes del inicio.</div>`;
   }
 
   const et = { home: "L", draw: "E", away: "V" };

@@ -393,3 +393,27 @@ def test_en_la_nube_sin_token_el_disparo_da_403(cliente, monkeypatch):
 
 def test_una_tarea_que_no_existe_da_404(cliente):
     assert cliente.get("/actualizar/no-existe").status_code == 404
+
+
+def test_solo_se_marca_reconstruccion_la_fecha_sin_prediccion_previa(cliente):
+    """`pre_deadline=False` es la excepción, no la regla.
+
+    Sólo la GW1 de 2026-27 lo es: se jugó del 21 al 24 de agosto y el sistema empezó a
+    registrar el 24. De la GW2 en adelante cada fecha tiene su predicción emitida antes
+    del inicio, y marcarlas todas como reconstrucción vaciaría de sentido el aviso.
+    """
+    gold = _gold_o_skip()
+    jugadas = sorted(gold[(gold["season"] == SEASON)
+                          & (gold["split"] != "inferencia")]["gameweek"].unique())
+    if len(jugadas) < 2:
+        pytest.skip("Hacen falta al menos dos fechas jugadas.")
+
+    reconstruidas = []
+    for gw in jugadas:
+        r = cliente.get(f"/predict/{SEASON}/{int(gw)}")
+        if r.status_code == 200 and r.json()["pre_deadline"] is False:
+            reconstruidas.append(int(gw))
+
+    assert len(reconstruidas) < len(jugadas), (
+        f"todas las fechas jugadas ({jugadas}) salieron como reconstrucción: "
+        f"o se rompió `registro.congelada`, o falta el registro pre-deadline")
