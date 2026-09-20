@@ -94,6 +94,30 @@ python scripts/smoke_load.py --endpoint /predict/2026-27/5
 python scripts/smoke_load.py --url http://127.0.0.1:8080
 ```
 
+Generar un error a proposito
+```bash 
+curl -s "${SERVICE_URL}/predict/2026-27/9999"
+```
+
+Leer los eventos prediction 
+```bash 
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="premier-ml-api" AND jsonPayload.event="prediction"' --limit 6 \
+  --format="table(jsonPayload.latency_ms, jsonPayload.season, jsonPayload.gameweek, jsonPayload.count, jsonPayload.confianza_media)"
+```
+
+Leer los eventos error
+```bash 
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="premier-ml-api" AND jsonPayload.event="prediction_error"' --limit 3 \
+  --format="table(jsonPayload.status, jsonPayload.error_type, jsonPayload.reason)"
+```
+
+Mostrar un evento completo en crudo
+```bash gi
+gcloud logging read 'jsonPayload.event="prediction"' --limit 1 --format=json
+```
+
+
+
 
 
 
