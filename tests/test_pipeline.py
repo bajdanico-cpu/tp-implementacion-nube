@@ -105,10 +105,9 @@ def _fixtures_falsos(corte: pd.Timestamp) -> pd.DataFrame:
 
 def test_no_predice_despues_del_corte_sin_forzar(monkeypatch):
     ayer = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=1)
-    monkeypatch.setattr(pre_deadline, "read_table", lambda *_a, **_k: None, raising=False)
     monkeypatch.setattr("common.storage.read_table", lambda *_a, **_k: _fixtures_falsos(ayer))
 
-    with pytest.raises(RuntimeError, match="reconstrucción"):
+    with pytest.raises(pre_deadline.FechaYaArranco, match="reconstrucción"):
         pre_deadline._guard_pre_deadline("2099-00", 7, forzar=False)
 
 
@@ -139,3 +138,38 @@ def test_solo_football_data_es_opcional():
     pasos = pre_deadline._pasos("2099-00", 1, True, False, False)
     opcionales = [p.nombre for p in pasos if not p.obligatorio]
     assert opcionales == ["bronze_fd"]
+
+
+# ---------------------------------------------------------------------------
+# Cuando la fuente se atrasa
+# ---------------------------------------------------------------------------
+
+def _predecir_de(gameweek, monkeypatch, corte):
+    """El paso `predecir` del pipeline, con el calendario y Silver sustituidos."""
+    monkeypatch.setattr("common.storage.read_table", lambda *_a, **_k: _fixtures_falsos(corte))
+    monkeypatch.setattr(pre_deadline, "_fecha_objetivo", lambda gw, s: gw or 7)
+    pasos = pre_deadline._pasos("2099-00", gameweek, dry_run=True,
+                                forzar=False, force_ingesta=False)
+    return next(p for p in pasos if p.nombre == "predecir").correr
+
+
+def test_si_la_proxima_ya_arranco_el_pipeline_avisa_y_sigue(monkeypatch):
+    """El caso del 20/09/2026, y es el normal: la fecha se jugó y la fuente se atrasó.
+
+    football-data sube el CSV de la temporada con retraso, así que Gold no puede avanzar
+    y la próxima predecible sigue siendo una fecha que ya empezó. La ingesta igual sirvió
+    --dejó Bronze y Silver más frescos-- y tirar toda la corrida abajo por eso convierte
+    una espera normal en un error rojo que nadie sabe cómo resolver.
+    """
+    ayer = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=1)
+    salida = _predecir_de(None, monkeypatch, ayer)()
+
+    assert salida["registrado"] is False
+    assert "todavía" in salida["motivo"]
+
+
+def test_pedir_explicitamente_una_fecha_pasada_si_es_un_error(monkeypatch):
+    """La misma situación, otra intención: si la pediste vos, te lo decimos."""
+    ayer = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=1)
+    with pytest.raises(pre_deadline.FechaYaArranco):
+        _predecir_de(7, monkeypatch, ayer)()

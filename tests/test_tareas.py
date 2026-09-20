@@ -149,3 +149,32 @@ def test_sin_fecha_de_inferencia_hace_falta():
     d = _gold(corte=pd.Timestamp.now(tz="UTC"), ultimo_jugado=pd.Timestamp.now(tz="UTC"))
     d = d[d["split"] != "inferencia"]
     assert tareas.diagnostico(d)["hace_falta"] is True
+
+
+def test_si_gold_es_reciente_y_no_avanzo_no_pide_apretar_de_nuevo():
+    """El que falta es la fuente, no el pipeline.
+
+    Después de una corrida que no pudo avanzar porque football-data todavía no publicó
+    la fecha, decir "conviene actualizar" manda a apretar en el vacío. El sistema tiene
+    que distinguir "hay datos nuevos" de "ya fui a buscarlos y no estaban".
+    """
+    hace_dos_dias = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=2)
+    hace_una_semana = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=7)
+
+    g = _gold(corte=hace_dos_dias, ultimo_jugado=hace_una_semana)
+    g["gold_built_at"] = pd.Timestamp.now(tz="UTC").strftime("%Y%m%dT%H%M%SZ")
+
+    d = tareas.diagnostico(g)
+    assert d["hace_falta"] is False
+    assert "no fueron publicados" in d["motivo"]
+
+
+def test_si_gold_esta_viejo_si_conviene_actualizar():
+    """La contracara: si hace rato que nadie corre el pipeline, hay que correrlo."""
+    hace_dos_dias = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=2)
+    hace_una_semana = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=7)
+
+    g = _gold(corte=hace_dos_dias, ultimo_jugado=hace_una_semana)
+    g["gold_built_at"] = "20260101T000000Z"
+
+    assert tareas.diagnostico(g)["hace_falta"] is True

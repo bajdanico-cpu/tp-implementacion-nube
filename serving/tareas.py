@@ -102,6 +102,15 @@ def autorizar(token: str | None) -> None:
 # ¿Tiene sentido disparar?
 # ---------------------------------------------------------------------------
 
+def _construido_hace(gold: pd.DataFrame) -> float | None:
+    """Segundos desde que se construyó Gold, o None si no se puede saber."""
+    try:
+        stamp = str(gold["gold_built_at"].max())
+        t = pd.Timestamp(stamp.replace("Z", ""), tz="UTC")
+        return max(0.0, (pd.Timestamp.now(tz="UTC") - t).total_seconds())
+    except Exception:                        # noqa: BLE001 — es informativo, no crítico
+        return None
+
 def diagnostico(gold: pd.DataFrame | None) -> dict:
     """Hasta dónde llega Gold y si conviene actualizar.
 
@@ -141,6 +150,24 @@ def diagnostico(gold: pd.DataFrame | None) -> dict:
     #       terminó.
     vencida = ultimo is not None and ultimo >= corte
     paso_el_corte = corte <= ahora
+
+    # Si Gold se reconstruyó hace poco y la próxima sigue siendo la misma fecha ya
+    # arrancada, el que falta no es el pipeline: es la fuente. football-data publica el
+    # CSV de la temporada con retraso, así que insistir con el botón no cambia nada.
+    # Decir "conviene actualizar" ahí sería mandar a alguien a apretar en el vacío.
+    reciente = _construido_hace(actual)
+    if paso_el_corte and not vencida and reciente is not None and reciente < 3 * 3600:
+        return {
+            "hace_falta": False,
+            "motivo": (f"la GW{gw} ya se jugó, pero sus resultados todavía no fueron "
+                       f"publicados por la fuente. Gold se actualizó hace "
+                       f"{reciente / 60:.0f} min y no había nada nuevo: hay que esperar "
+                       f"a que football-data suba la fecha"),
+            "proxima_predecible": gw,
+            "corte_proxima": str(corte),
+            "gold_built_at": str(actual["gold_built_at"].max()),
+            "ultimo_partido_en_gold": None if ultimo is None else str(ultimo),
+        }
 
     if vencida:
         motivo = (f"hay partidos jugados posteriores al corte de la GW{gw} ({corte}): "

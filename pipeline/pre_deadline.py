@@ -26,7 +26,12 @@ corrida deja su JSON— pero por ahora se invoca a mano.
     silver          todo                             corta
     gold            el control anti-leakage          no se escribe nada; el Gold
                                                      vigente queda intacto
-    predecir        el registro de la fecha          corta; `--desde predecir` retoma
+    predecir        el registro de la fecha          corta si pediste una fecha con
+                                                     --gw; si la proxima la detecto el
+                                                     pipeline y ya arranco, avisa y
+                                                     sigue: la fuente todavia no
+                                                     publico los resultados y eso no
+                                                     es una falla del pipeline
 """
 
 from __future__ import annotations
@@ -58,12 +63,27 @@ def _fecha_objetivo(gameweek: int | None, season: str) -> int | None:
     return gw
 
 
+class FechaYaArranco(Exception):
+    """La fecha objetivo ya empezó: lo que se emita ahora no es una predicción."""
+
+    def __init__(self, season: str, gameweek: int, corte):
+        self.season, self.gameweek, self.corte = season, gameweek, corte
+        super().__init__(
+            f"{season} GW{gameweek} arrancó el {corte} y ya pasó. Una predicción emitida "
+            f"ahora no es una predicción: es una reconstrucción.")
+
+
 def _guard_pre_deadline(season: str, gameweek: int, forzar: bool) -> None:
-    """Aborta si la fecha ya arrancó.
+    """Levanta `FechaYaArranco` si la fecha objetivo ya empezó.
 
     El comando se llama `pre_deadline` por algo. Emitir con la fecha empezada y dejarlo
     en el registro contamina la evidencia: el monitoreo la contaría como predicción
     cuando en realidad es una reconstrucción hecha con información posterior.
+
+    Quién decide qué hacer con eso es el que llama, y no es lo mismo en los dos casos:
+    pedir explícitamente una fecha pasada es un error de quien lo pidió, mientras que
+    toparse con ella al buscar la próxima es una situación normal --la fecha se jugó y la
+    fuente todavía no publicó los resultados-- y no tiene por qué tirar la corrida abajo.
     """
     from common.storage import read_table
 
@@ -79,11 +99,12 @@ def _guard_pre_deadline(season: str, gameweek: int, forzar: bool) -> None:
         log.info("Faltan %.1f h para el inicio de %s GW%d (%s).", horas, season, gameweek, corte)
         return
 
-    msg = (f"{season} GW{gameweek} arrancó el {corte} y ya pasó. Una predicción emitida "
-           f"ahora no es una predicción: es una reconstrucción.")
-    if not forzar:
-        raise RuntimeError(msg + " Usá --forzar si aun así querés registrarla.")
-    log.warning("%s Se continúa por --forzar.", msg)
+    if forzar:
+        log.warning("%s arrancó el %s y se continúa igual por --forzar.",
+                    f"{season} GW{gameweek}", corte)
+        return
+
+    raise FechaYaArranco(season, gameweek, corte)
 
 
 def _pasos(season: str, gameweek: int | None, dry_run: bool,
@@ -97,8 +118,24 @@ def _pasos(season: str, gameweek: int | None, dry_run: bool,
     def _predecir():
         gw = _fecha_objetivo(gameweek, season)
         if gw is None:
-            raise RuntimeError("No hay fecha predecible: no hay nada que predecir.")
-        _guard_pre_deadline(season, gw, forzar)
+            # Fin de temporada, o Gold sin fecha lista. La ingesta igual sirvió.
+            log.warning("No hay ninguna fecha predecible: no se registra nada.")
+            return {"registrado": False, "motivo": "no hay fecha predecible"}
+
+        try:
+            _guard_pre_deadline(season, gw, forzar)
+        except FechaYaArranco as exc:
+            if gameweek is not None:
+                raise                       # la pediste vos: es un error tuyo
+            # Nadie la pidió: la encontramos buscando la próxima. Pasa cuando la fecha
+            # ya se jugó y la fuente todavía no publicó los resultados --football-data
+            # sube el CSV de la temporada con retraso-- así que Gold no puede avanzar.
+            # No es una falla del pipeline: la ingesta corrió y dejó todo más fresco.
+            log.warning("%s No se registra nada. Cuando la fuente publique los "
+                        "resultados, la próxima corrida avanza sola.", exc)
+            return {"registrado": False, "gameweek": gw,
+                    "motivo": "la próxima fecha ya arrancó y sus resultados todavía "
+                              "no están publicados"}
 
         pred = predict.predecir(season, gw)
         if dry_run:
