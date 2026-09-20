@@ -139,6 +139,12 @@ echo "proyecto=$PROJECT_ID  bucket=$BUCKET  imagen=$IMAGE"
 Se habilitan **por proyecto** y un proyecto nuevo nace con casi todo apagado. Habilitar
 es gratis; se paga el uso.
 
+> **Desde la consola:** *APIs y servicios → Biblioteca*, buscás cada una y apretás
+> **Habilitar**. Son cinco: Cloud Storage, Artifact Registry, Cloud Build, Cloud Run y
+> Cloud Logging. Después, en *APIs y servicios → APIs y servicios habilitados*, tienen
+> que aparecer las cinco. Es más lento que el comando, pero si algo falla más adelante
+> éste es el primer lugar donde mirar.
+
 ```bash
 gcloud services enable \
   storage.googleapis.com \
@@ -224,6 +230,15 @@ unset TP_STORAGE_BACKEND TP_GCS_BUCKET   # para que el resto siga en local
 ---
 
 ## 4 · Identidades: dos, no una
+
+> **Desde la consola:** *IAM y administración → Cuentas de servicio → Crear cuenta de
+> servicio*. El **ID** es lo que importa (`premier-api` y `premier-job`); el nombre visible
+> es para vos. **No hace falta darles ningún rol a nivel proyecto** — el paso siguiente los
+> da sobre el bucket, que es mucho más acotado. Eso se hace en *Cloud Storage → tu bucket
+> → Permisos → Otorgar acceso*:
+>
+> - `premier-api@…` → **Visualizador de objetos de Storage**
+> - `premier-job@…` → **Administrador de objetos de Storage**
 
 ```bash
 gcloud iam service-accounts create premier-api  --display-name "Premier ML API (solo lee)"
