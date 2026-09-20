@@ -1,0 +1,5 @@
+{
+  "version": "20260825T024144Z",
+  "motivo": "Unico modelo de produccion del TP: xgb_gbt con las 279 features (v2.3189c9d4.279), entrenado incluyendo 2025-26. La version 20260912T213159Z es la de EVALUACION (incluye_holdout=false) y ademas llego por git sin binarios.",
+  "promovido_at": "2026-09-20T16:50:33.656740+00:00"
+}

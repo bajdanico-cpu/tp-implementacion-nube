@@ -1,0 +1,110 @@
+{
+ "ARS": {
+  "code": 3,
+  "nombre": "Arsenal"
+ },
+ "AVL": {
+  "code": 7,
+  "nombre": "Aston Villa"
+ },
+ "BHA": {
+  "code": 36,
+  "nombre": "Brighton"
+ },
+ "BOU": {
+  "code": 91,
+  "nombre": "Bournemouth"
+ },
+ "BRE": {
+  "code": 94,
+  "nombre": "Brentford"
+ },
+ "BUR": {
+  "code": 90,
+  "nombre": "Burnley"
+ },
+ "CHE": {
+  "code": 8,
+  "nombre": "Chelsea"
+ },
+ "COV": {
+  "code": 9,
+  "nombre": "Coventry City"
+ },
+ "CRY": {
+  "code": 31,
+  "nombre": "Crystal Palace"
+ },
+ "EVE": {
+  "code": 11,
+  "nombre": "Everton"
+ },
+ "FUL": {
+  "code": 54,
+  "nombre": "Fulham"
+ },
+ "HUL": {
+  "code": 88,
+  "nombre": "Hull City"
+ },
+ "IPS": {
+  "code": 40,
+  "nombre": "Ipswich Town"
+ },
+ "LEE": {
+  "code": 2,
+  "nombre": "Leeds"
+ },
+ "LEI": {
+  "code": 13,
+  "nombre": "Leicester"
+ },
+ "LIV": {
+  "code": 14,
+  "nombre": "Liverpool"
+ },
+ "LUT": {
+  "code": 102,
+  "nombre": "Luton"
+ },
+ "MCI": {
+  "code": 43,
+  "nombre": "Man City"
+ },
+ "MUN": {
+  "code": 1,
+  "nombre": "Man Utd"
+ },
+ "NEW": {
+  "code": 4,
+  "nombre": "Newcastle"
+ },
+ "NFO": {
+  "code": 17,
+  "nombre": "Nott'm Forest"
+ },
+ "SHU": {
+  "code": 49,
+  "nombre": "Sheffield Utd"
+ },
+ "SOU": {
+  "code": 20,
+  "nombre": "Southampton"
+ },
+ "SUN": {
+  "code": 56,
+  "nombre": "Sunderland"
+ },
+ "TOT": {
+  "code": 6,
+  "nombre": "Spurs"
+ },
+ "WHU": {
+  "code": 21,
+  "nombre": "West Ham"
+ },
+ "WOL": {
+  "code": 39,
+  "nombre": "Wolves"
+ }
+}

@@ -429,3 +429,41 @@ def test_el_reporte_incluye_el_rps():
     rep = metrics.reporte(y, np.array(CLASES_ORD)[P.argmax(1)], P, con_ic=False)
     assert 0.0 <= rep["rps"] <= 1.0
     assert rep["rps"] == pytest.approx(metrics.rps(y, P))
+
+
+def test_el_split_de_entrenamiento_nunca_incluye_filas_de_inferencia():
+    """El caso patológico: la inferencia materializada en una temporada de TRAIN.
+
+    Hoy no puede pasar —`gold_tp` sólo materializa la temporada en curso, y el split
+    filtra por temporada— así que la protección real es indirecta. Este test la vuelve
+    directa: si alguien cambia esa regla, `dataset.codificar` recibiría un NaN y el
+    entrenamiento moriría con "Etiquetas fuera de [...]" en vez de ignorar la fila.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from common.config import CFG
+    from features import spec
+    from training import dataset
+
+    gold = dataset.cargar()
+    entrenables = gold[gold["split"] != "inferencia"]
+    if entrenables.empty:
+        pytest.skip("Gold vacío.")
+
+    # Se clona una fila de train y se la ensucia: sin target y marcada como inferencia,
+    # pero en una temporada que el split SÍ mira.
+    train = CFG.seasons_for_training()[0]
+    fila = entrenables[entrenables["season"] == train].head(1).copy()
+    if fila.empty:
+        pytest.skip(f"No hay filas de {train} en Gold.")
+    fila["fixture_id"] = -1
+    fila["split"] = "inferencia"
+    fila["target_1x2"] = np.nan
+    sucio = pd.concat([gold, fila], ignore_index=True)
+
+    split = dataset.preparar(sucio, con_validacion=True)
+    assert len(split.y_train) == len(dataset.preparar(gold).y_train)
+
+    X, y = dataset.train_completo(sucio, spec.FEATURES)
+    assert not pd.isna(y).any()

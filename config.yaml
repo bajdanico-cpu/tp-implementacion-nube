@@ -19,6 +19,12 @@ seasons:
   # Temporada reservada para test temporal. Nunca entra al entrenamiento.
   holdout: "2025-26"
 
+  # Fechas por temporada. Con 20 equipos son 38 (todos contra todos, ida y vuelta).
+  # Se declara acá porque el SERVICIO la necesita para mostrar el calendario completo
+  # —incluidas las fechas que todavía no tienen features— y el servicio no lee Silver,
+  # donde vive fact_fixture. Si la liga cambiara de tamaño, se cambia acá.
+  gameweeks: 38
+
 sources:
   fpl_api:
     base_url: "https://fantasy.premierleague.com/api"
@@ -45,7 +51,7 @@ sources:
 
   football_data:
     # Formato de temporada distinto: 2022-23 -> "2223".
-    base_url: "https://www.football-data.co.uk/mmz4281"
+    base_url: "https://football-data.co.uk/mmz4281"
     division: "E0" # E0 = Premier League
     timeout_s: 60
     # Guard crítico: el URL de una temporada que todavía no arrancó redirige (301)

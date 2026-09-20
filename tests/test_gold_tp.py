@@ -191,15 +191,34 @@ def test_el_head_to_head_no_supera_lo_posible(gold_tp):
 # ---------------------------------------------------------------------------
 
 def test_el_target_es_coherente_con_los_goles(gold_tp):
-    esperado = np.where(gold_tp["home_goals"] > gold_tp["away_goals"], "home",
-                        np.where(gold_tp["home_goals"] == gold_tp["away_goals"],
+    """Sólo sobre las filas jugadas: la fecha que viene entra a Gold sin resultado."""
+    d = gold_tp[gold_tp["split"] != "inferencia"]
+    esperado = np.where(d["home_goals"] > d["away_goals"], "home",
+                        np.where(d["home_goals"] == d["away_goals"],
                                  "draw", "away"))
-    assert (gold_tp["target_1x2"] == esperado).all()
+    assert (d["target_1x2"] == esperado).all()
 
 
 def test_las_probabilidades_del_mercado_suman_uno(gold_tp):
-    s = gold_tp[["p_mercado_home", "p_mercado_draw", "p_mercado_away"]].sum(axis=1)
-    assert np.allclose(s.dropna(), 1.0, atol=1e-9)
+    """Sobre las filas que TIENEN cuotas.
+
+    El filtro va sobre las columnas y no sobre la suma: `sum(axis=1)` colapsa una fila
+    toda-NaN a 0.0, así que un `.dropna()` sobre la suma no la filtra y el test fallaba
+    con "0.0 != 1.0" apenas Gold incorporó la fecha que viene, que no tiene cuotas
+    porque football-data publica las de cierre recién cuando el partido se juega.
+    """
+    cols = ["p_mercado_home", "p_mercado_draw", "p_mercado_away"]
+    con_mercado = gold_tp[gold_tp[cols].notna().all(axis=1)]
+    assert not con_mercado.empty
+    assert np.allclose(con_mercado[cols].sum(axis=1), 1.0, atol=1e-9)
+
+
+def test_la_fecha_sin_jugar_no_tiene_cuotas_de_cierre(gold_tp):
+    """Y no es un 0: una cuota ausente es NaN, porque 0 sería afirmar algo."""
+    inf = gold_tp[gold_tp["split"] == "inferencia"]
+    if inf.empty:
+        pytest.skip("No hay fecha predecible en este Gold.")
+    assert inf[spec.MERCADO].isna().all(axis=None)
 
 
 def test_el_split_es_temporal_y_no_se_solapa(gold_tp):
@@ -239,3 +258,106 @@ def test_la_version_del_feature_set_se_deriva_del_contenido():
 
 def test_gold_registra_la_version_con_la_que_se_construyo(gold_tp):
     assert (gold_tp["feature_set_version"] == spec.FEATURE_SET_VERSION).all()
+
+
+# ---------------------------------------------------------------------------
+# La fecha que todavía no se jugó
+#
+# Gold materializa, además de los partidos jugados, la fila de la próxima fecha
+# predecible. Es lo que permite que el serving haga un lookup en vez de reconstruir las
+# 279 features en cada request. Estos tests cuidan que esa fila no contamine nada.
+# ---------------------------------------------------------------------------
+
+def test_las_filas_de_inferencia_no_tienen_target(gold_tp):
+    inf = gold_tp[gold_tp["split"] == "inferencia"]
+    if inf.empty:
+        pytest.skip("No hay fecha predecible en este Gold.")
+    assert inf["target_1x2"].isna().all()
+    assert inf["home_goals"].isna().all()
+
+
+def test_toda_fila_sin_target_esta_marcada_como_inferencia(gold_tp):
+    """La recíproca, que es la que atrapa el fallo silencioso.
+
+    `np.where` no propaga NaN: sobre un `goal_diff` nulo cae en la rama `else` y devuelve
+    "away". Si el target volviera a inventarse para un partido sin jugar, la fila
+    quedaría clasificada como `actual` en vez de `inferencia`, y sin este test el modelo
+    entrenaría con una etiqueta fabricada sin que nada fallara.
+    """
+    con_target = gold_tp["target_1x2"].notna()
+    marcadas = gold_tp["split"] == "inferencia"
+    assert (con_target != marcadas).all(), (
+        "split y target_1x2 tienen que decir exactamente lo mismo")
+
+
+def test_las_filas_de_inferencia_son_solo_de_la_temporada_actual(gold_tp):
+    inf = gold_tp[gold_tp["split"] == "inferencia"]
+    if inf.empty:
+        pytest.skip("No hay fecha predecible en este Gold.")
+    assert set(inf["season"]) == {CFG.current_season}
+
+
+def test_hay_a_lo_sumo_una_fecha_de_inferencia(gold_tp):
+    """Materializar fechas lejanas traería filas que después cambian, y features rotas.
+
+    Medido el 20/09/2026: para la GW12, con el corte a 70 días, las ~28 columnas de
+    ventana de Opta salían NaN porque el rolling se ancla en fixtures sin jugar.
+    """
+    inf = gold_tp[gold_tp["split"] == "inferencia"]
+    assert len(inf[["season", "gameweek"]].drop_duplicates()) <= 1
+
+
+def test_la_fila_de_inferencia_comparte_corte_con_su_fecha(gold_tp):
+    """Una fecha en curso tiene filas jugadas y sin jugar: todas con el mismo corte."""
+    inf = gold_tp[gold_tp["split"] == "inferencia"]
+    if inf.empty:
+        pytest.skip("No hay fecha predecible en este Gold.")
+    gw = int(inf["gameweek"].iloc[0])
+    de_la_fecha = gold_tp[(gold_tp["season"] == CFG.current_season)
+                          & (gold_tp["gameweek"] == gw)]
+    assert de_la_fecha["corte"].nunique() == 1
+
+
+def test_las_features_de_opta_de_la_inferencia_no_son_todas_nulas(gold_tp):
+    from features import opta as fopta
+
+    inf = gold_tp[gold_tp["split"] == "inferencia"]
+    if inf.empty or not fopta.disponible():
+        pytest.skip("No hay fecha predecible, o no hay Opta ingestada.")
+    cols = [f"{lado}_{c}" for c in fopta.COLUMNAS for lado in spec.LADOS]
+    cols = [c for c in cols if c in gold_tp.columns]
+    assert cols and not inf[cols].isna().all(axis=None)
+
+
+def test_reconstruir_gold_no_cambia_una_fila_ya_definitiva(gold_tp):
+    """El test que sostiene todo el diseño.
+
+    La fila que el serving usa para predecir la fecha N se calcula antes del deadline; la
+    misma fila, después, entra como histórica al entrenamiento. Si no fueran idénticas,
+    habría train/serve skew — y ninguna de las dos mitades lo notaría sola.
+
+    Se compara contra la última versión archivada de Gold, que es la que quedó apartada
+    en la corrida anterior.
+    """
+    from common.storage import versiones, versiones_root
+
+    archivadas = versiones("gold", "gold_tp_match")
+    if not archivadas:
+        pytest.skip("No hay ninguna versión archivada de Gold para comparar.")
+
+    anterior = archivadas[-1]
+    vieja = pd.read_parquet(versiones_root("gold", "gold_tp_match") / anterior["archivo"])
+    if "split" not in vieja.columns:
+        pytest.skip("La versión archivada es anterior al split por fila.")
+
+    k = spec.CLAVE_PARTIDO
+    definitivas = vieja[vieja["split"] != "inferencia"][k]
+    comunes = definitivas.merge(gold_tp[k], on=k)
+    if comunes.empty:
+        pytest.skip("No hay filas en común entre las dos versiones.")
+
+    a = vieja.merge(comunes, on=k).sort_values(k).reset_index(drop=True)
+    b = gold_tp.merge(comunes, on=k).sort_values(k).reset_index(drop=True)
+    distintas = [c for c in spec.FEATURES if not a[c].equals(b[c])]
+    assert not distintas, (
+        f"{len(distintas)} features cambiaron en filas ya definitivas: {distintas[:8]}")

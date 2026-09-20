@@ -21,7 +21,7 @@ from common.config import CFG, PROJECT_ROOT, utc_stamp
 from common.logging_setup import get_logger, setup
 from common.storage import archivar, read_table, write_table
 from eda.baselines import odds_a_probabilidades
-from features import (cold_start, competencias as fcomp, elo, h2h,
+from features import (calendario, cold_start, competencias as fcomp, elo, h2h,
                       opta as fopta, pi_ratings, player_agg, spec, team_form as tf,
                       valores as fval, estilos as fest,
                       ataque_defensa as faf)
@@ -82,7 +82,8 @@ def _a_ancho(largo_feats: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
 
 
 def construir(objetivos: pd.DataFrame | None = None,
-              con_target: bool = True) -> pd.DataFrame:
+              con_target: bool = True,
+              con_proxima: bool = True) -> pd.DataFrame:
     """Arma la tabla Gold desde Silver.
 
     Con los valores por defecto produce la tabla histórica: un objetivo por cada partido
@@ -94,7 +95,13 @@ def construir(objetivos: pd.DataFrame | None = None,
     mismo trabajo. Con `con_target=False` se omiten las columnas de resultado, que para un
     partido futuro no existen.
 
-    Que las dos rutas compartan este cuerpo no es prolijidad: es lo que garantiza que las
+    Con `con_proxima` (el default) la tabla histórica incluye además la fila de la
+    **próxima fecha predecible**, sin target. Es lo que permite que el serving haga un
+    lookup en vez de reconstruir las 279 features en cada request — 25 segundos que
+    además obligaban a meter Silver entero en la imagen. La fila sólo se materializa
+    cuando ya no puede cambiar; el criterio vive en `features/calendario.py`.
+
+    Que las tres rutas compartan este cuerpo no es prolijidad: es lo que garantiza que las
     features de producción se calculen igual que las de entrenamiento. Dos
     implementaciones paralelas es como se produce el train/serve skew.
     """
@@ -108,7 +115,20 @@ def construir(objetivos: pd.DataFrame | None = None,
     log.info("Tabla larga equipo-partido: %d filas", len(largo))
 
     cortes = tf.cortes_por_fecha(fixtures)
-    obj = _objetivos(largo, cortes) if objetivos is None else objetivos.copy()
+    if objetivos is not None:
+        obj = objetivos.copy()
+    else:
+        obj = _objetivos(largo, cortes)
+        if con_proxima:
+            inf = calendario.objetivos_inferencia(
+                fixtures, matches, cortes,
+                comp=read_table("fact_match_comp"),
+                stats=read_table("fact_opta_stats") if fopta.disponible() else None)
+            if not inf.empty:
+                obj = pd.concat([obj, inf], ignore_index=True)
+        if obj.duplicated(CLAVE).any():
+            raise ValueError("Un fixture quedó como jugado y como inferencia a la vez: "
+                             "revisá el cruce fixture-resultado.")
     obj_lado = _objetivos_por_lado(obj)
 
     # --- historias, cada una con su clave de agrupación ---
@@ -247,11 +267,16 @@ def construir(objetivos: pd.DataFrame | None = None,
 
     # La temporada en curso NO es train: entra a Gold para que sus partidos jugados
     # sirvan de historia, pero `dataset.preparar` sólo toma las de `seasons_for_training`.
+    # `split` por FILA y no por tabla: desde que Gold materializa la próxima fecha, una
+    # misma temporada —y hasta una misma gameweek, cuando está en curso— tiene filas con
+    # resultado y filas sin él. La ausencia de target manda sobre todo lo demás: es el
+    # hecho, y el resto es clasificación.
     if con_target:
         gold["split"] = np.select(
-            [gold["season"] == CFG.holdout_season,
+            [gold["target_1x2"].isna(),
+             gold["season"] == CFG.holdout_season,
              gold["season"].isin(CFG.seasons_for_training())],
-            ["holdout", "train"], default="actual")
+            ["inferencia", "holdout", "train"], default="actual")
     else:
         gold["split"] = "inferencia"
 
@@ -300,10 +325,20 @@ def _target_y_mercado(gold: pd.DataFrame, matches: pd.DataFrame,
     """El target y las cuotas de referencia (que NO son features)."""
     loc = largo[largo["es_local"]][["season", "fixture_id", "gf", "gc"]].rename(
         columns={"gf": "home_goals", "gc": "away_goals"})
-    gold = gold.merge(loc, on=CLAVE, validate="one_to_one")
+    # LEFT y no inner: desde que Gold materializa también la próxima fecha hay filas sin
+    # resultado, y un inner las borraría sin decir nada.
+    gold = gold.merge(loc, on=CLAVE, how="left", validate="one_to_one")
     gold["goal_diff"] = gold["home_goals"] - gold["away_goals"]
-    gold["target_1x2"] = np.where(gold["goal_diff"] > 0, "home",
-                                  np.where(gold["goal_diff"] == 0, "draw", "away"))
+
+    # El target SÓLO donde hay goles. `np.where` no propaga el NaN: sobre un goal_diff
+    # nulo cae en la rama `else` y devuelve "away". Un partido sin jugar quedaría
+    # etiquetado como victoria visitante, el modelo entrenaría con esa etiqueta inventada
+    # y ningún test lo vería. Verificado a mano antes de escribir esto.
+    jugado = gold["home_goals"].notna() & gold["away_goals"].notna()
+    gold["target_1x2"] = pd.Series(pd.NA, index=gold.index, dtype="object")
+    gold.loc[jugado, "target_1x2"] = np.where(
+        gold.loc[jugado, "goal_diff"] > 0, "home",
+        np.where(gold.loc[jugado, "goal_diff"] == 0, "draw", "away"))
 
     # Las cuotas de CIERRE viven en Gold sólo para el baseline y la simulación de ROI.
     # Nunca son feature: se fijan minutos antes del kickoff (o sea, después del corte), y
@@ -372,6 +407,58 @@ def _historia_ratings() -> pd.DataFrame | None:
     return h
 
 
+def _validar_inferencia(gold: pd.DataFrame) -> None:
+    """Coherencia de las filas que todavía no se jugaron.
+
+    Corre en el pipeline y no en los tests, como el resto de los controles de este módulo:
+    lo que protege es la tabla que se escribe, y una tabla mal escrita ya hizo daño aunque
+    después un test la encuentre.
+    """
+    inf = gold["split"] == "inferencia"
+
+    # El control que atrapa el fallo silencioso del target. Va en las DOS direcciones a
+    # propósito: si `np.where` volviera a inventar una etiqueta para un partido sin
+    # jugar, esa fila dejaría de estar marcada como inferencia y lo veríamos acá.
+    if inf.any() and gold.loc[inf, "target_1x2"].notna().any():
+        n = int(gold.loc[inf, "target_1x2"].notna().sum())
+        raise ValueError(f"{n} filas marcadas como inferencia TIENEN target: "
+                         f"el target se inventó para un partido sin jugar.")
+    sin_target = gold.loc[~inf, "target_1x2"].isna()
+    if sin_target.any():
+        raise ValueError(f"{int(sin_target.sum())} filas con target nulo NO están "
+                         f"marcadas como inferencia: se perdió el resultado, o el split "
+                         f"se calculó antes que el target.")
+
+    if not inf.any():
+        return
+
+    temporadas = set(gold.loc[inf, "season"])
+    if temporadas != {CFG.current_season}:
+        raise ValueError(f"La inferencia sólo puede ser de la temporada en curso "
+                         f"({CFG.current_season}); hay filas de {sorted(temporadas)}.")
+
+    fechas = gold.loc[inf, ["season", "gameweek"]].drop_duplicates()
+    if len(fechas) > 1:
+        raise ValueError(f"Gold materializa a lo sumo UNA fecha de inferencia y hay "
+                         f"{len(fechas)}: {fechas.to_dict('records')}")
+
+    # Defensa contra la degradación silenciosa de Opta. `features/opta.py` arma el rolling
+    # sobre TODOS los fixtures de Premier, jugados o no, con `min_periods=1`: si faltara
+    # la ingesta de la fecha anterior, estas columnas saldrían nulas o calculadas sobre
+    # menos partidos, y el merge_asof no se quejaría.
+    if fopta.disponible():
+        cols = [f"{lado}_{c}" for c in fopta.COLUMNAS for lado in spec.LADOS]
+        cols = [c for c in cols if c in gold.columns]
+        if cols and gold.loc[inf, cols].isna().all(axis=None):
+            raise ValueError("Las features de Opta de la fila de inferencia son todas "
+                             "nulas: falta la ingesta de la fecha anterior "
+                             "(python -m ingestion.bronze_pulselive).")
+
+    gw = int(fechas["gameweek"].iloc[0])
+    log.info("Gold incluye la fecha %s GW%d como inferencia: %d partido(s) sin jugar.",
+             CFG.current_season, gw, int(inf.sum()))
+
+
 def _validar(gold: pd.DataFrame, fixtures: pd.DataFrame) -> None:
     leakage.assert_no_banned_columns(gold, context=TABLA)
 
@@ -385,6 +472,8 @@ def _validar(gold: pd.DataFrame, fixtures: pd.DataFrame) -> None:
 
     if gold.duplicated(CLAVE).any():
         raise ValueError("Hay partidos duplicados en Gold.")
+
+    _validar_inferencia(gold)
 
     # La prueba auditable: toda historia usada es anterior al corte.
     for lado in spec.LADOS:

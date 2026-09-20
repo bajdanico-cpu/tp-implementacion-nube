@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Premier ML</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://resources.premierleague.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Paleta de la Premier League: morado de fondo, y verde / cian / magenta de acento.
+   No se usa ningún logo ni marca denominativa: es un proyecto académico, no una página
+   oficial. Los escudos de los clubes se cargan del CDN público de la liga. */
+:root{
+  --pl-morado:#37003c; --pl-morado-2:#2b0030;
+  --pl-verde:#00ff85; --pl-cian:#04f5ff; --pl-magenta:#e90052;
+  --paper:#f4f4f6; --card:#fff; --ink:#1a1a1c; --ink-2:#4a4a52; --muted:#7a7a85;
+  --rule:#e2e2e8;
+  --local:#00c46a; --empate:#8b8b96; --visita:#e90052;
+  --good:#00844a; --bad:#c2003f; --warn:#8a6410;
+  --shadow:0 1px 2px rgba(55,0,60,.06), 0 10px 28px -16px rgba(55,0,60,.28);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#16011a; --card:#22052a; --ink:#f2eaf4; --ink-2:#c6b2cd; --muted:#9585a0;
+    --rule:#3a1442;
+    --local:#00ff85; --empate:#9d8fa6; --visita:#ff4d84;
+    --good:#00ff85; --bad:#ff4d84; --warn:#ffc65c;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -16px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#16011a; --card:#22052a; --ink:#f2eaf4; --ink-2:#c6b2cd; --muted:#9585a0;
+  --rule:#3a1442; --local:#00ff85; --empate:#9d8fa6; --visita:#ff4d84;
+  --good:#00ff85; --bad:#ff4d84; --warn:#ffc65c;
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--paper); color:var(--ink);
+     font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif; line-height:1.5}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+
+/* ---------- barra superior ---------- */
+.top{background:var(--pl-morado); color:#fff;
+     background-image:linear-gradient(115deg,var(--pl-morado) 60%,var(--pl-morado-2) 100%)}
+.top-in{max-width:1080px; margin:0 auto; padding:18px 16px}
+.marca{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+h1{font-size:1.4rem; margin:0; font-weight:700; letter-spacing:-.02em}
+h1 em{font-style:normal; color:var(--pl-verde)}
+.marca .temp{margin-left:auto; font-size:.82rem; color:#cbb6d2; font-family:"IBM Plex Mono",monospace}
+#salud{display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center; margin-top:12px; font-size:.78rem}
+#salud .dato{color:#c3aecb}
+#salud .dato b{color:#fff; font-family:"IBM Plex Mono",monospace; font-weight:500}
+
+.pill{display:inline-flex; align-items:center; gap:5px; padding:2px 10px; border-radius:999px;
+      font-size:.7rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase}
+.pill.ok{background:var(--pl-verde); color:#08301d}
+.pill.mal{background:var(--pl-magenta); color:#fff}
+.pill.avi{background:#ffc65c; color:#3d2b00}
+.pill.neutro{background:var(--pl-cian); color:#00323a}
+
+/* ---------- cuerpo ---------- */
+.wrap{max-width:1080px; margin:0 auto; padding:24px 16px 56px}
+h2{font-size:.72rem; text-transform:uppercase; letter-spacing:.1em; color:var(--muted);
+   margin:0 0 10px; font-weight:700}
+
+#fechas{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:28px}
+.fecha{background:var(--card); border:1px solid var(--rule); border-radius:8px; color:inherit;
+       padding:7px 12px; cursor:pointer; font-size:.84rem; min-width:76px;
+       display:flex; flex-direction:column; gap:2px; transition:.12s}
+.fecha:hover{border-color:var(--pl-magenta); transform:translateY(-1px)}
+.fecha[aria-selected="true"]{background:var(--pl-morado); border-color:var(--pl-morado); color:#fff}
+.fecha[aria-selected="true"] .sub{color:var(--pl-verde)}
+.fecha .gw{font-weight:700; font-family:"IBM Plex Mono",monospace}
+.fecha .sub{font-size:.68rem; color:var(--muted)}
+.fecha .sub.prox{color:var(--pl-magenta); font-weight:700}
+
+.fecha.gris{opacity:.42; cursor:help}
+.fecha.gris:hover{opacity:.8; border-color:var(--rule); transform:none}
+
+/* ---------- estado del dato ---------- */
+#datos{background:var(--card); border:1px solid var(--rule); border-radius:12px;
+       padding:12px 16px; margin-bottom:16px; box-shadow:var(--shadow);
+       display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center}
+#datos .txt{font-size:.82rem; color:var(--ink-2); flex:1; min-width:260px}
+#datos .txt b{font-family:"IBM Plex Mono",monospace}
+#datos .txt .por{color:var(--muted); display:block; font-size:.76rem; margin-top:2px}
+.btn{border:0; border-radius:8px; padding:8px 16px; font-weight:700; font-size:.8rem;
+     cursor:pointer; font-family:inherit; background:var(--pl-magenta); color:#fff;
+     letter-spacing:.02em; transition:.12s}
+.btn:hover:not(:disabled){filter:brightness(1.12)}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn.quieto{background:var(--rule); color:var(--ink-2)}
+.spin{display:inline-block; width:11px; height:11px; margin-right:7px; vertical-align:-1px;
+      border:2px solid currentColor; border-right-color:transparent; border-radius:50%;
+      animation:giro .7s linear infinite}
+@keyframes giro{to{transform:rotate(360deg)}}
+
+#cabecera{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin-bottom:14px}
+#cabecera .nota{font-size:.78rem; color:var(--muted)}
+
+/* ---------- partidos ---------- */
+.partido{background:var(--card); border:1px solid var(--rule); border-radius:12px;
+         padding:14px 16px; margin-bottom:10px; box-shadow:var(--shadow)}
+.linea{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+.lado{display:flex; align-items:center; gap:8px; min-width:0}
+.lado.der{flex-direction:row-reverse}
+.escudo{width:30px; height:30px; object-fit:contain; flex:none}
+.escudo.ph{display:flex; align-items:center; justify-content:center; border-radius:50%;
+           background:var(--rule); color:var(--muted); font-size:.62rem; font-weight:700}
+.nom{font-weight:600; font-family:"IBM Plex Mono",monospace; font-size:.98rem}
+.marcador{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:1.15rem;
+          padding:2px 10px; border-radius:6px; background:var(--pl-morado); color:#fff}
+.cuando{font-size:.74rem; color:var(--muted); margin-left:auto}
+
+.barra{display:flex; height:28px; border-radius:7px; overflow:hidden; margin-top:12px; font-size:.72rem}
+.barra div{display:flex; align-items:center; justify-content:center; font-weight:700;
+           font-family:"IBM Plex Mono",monospace; min-width:0; white-space:nowrap}
+.barra .h{background:var(--local); color:#06301c}
+.barra .d{background:var(--empate); color:#fff}
+.barra .a{background:var(--visita); color:#fff}
+.leyenda{display:flex; flex-wrap:wrap; gap:6px 16px; font-size:.7rem; color:var(--muted); margin-top:7px}
+.leyenda i{font-style:normal; display:inline-flex; align-items:center; gap:5px}
+.leyenda b{width:9px; height:9px; border-radius:2px; display:inline-block}
+.leyenda .pago{font-family:"IBM Plex Mono",monospace; color:var(--ink-2); font-weight:600}
+.leyenda .gano{color:var(--good)}
+
+.pie{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin-top:10px;
+     font-size:.78rem; color:var(--muted)}
+.pie b{color:var(--ink-2); font-weight:700}
+
+.aviso{border-left:3px solid #ffc65c; background:rgba(255,198,92,.12);
+       padding:10px 14px; border-radius:0 8px 8px 0; font-size:.84rem; margin-bottom:16px}
+.aviso.error{border-left-color:var(--pl-magenta); background:rgba(233,0,82,.09)}
+.cargando{color:var(--muted); font-size:.85rem; padding:20px 0}
+
+footer{max-width:1080px; margin:0 auto; padding:0 16px 40px; font-size:.74rem; color:var(--muted)}
+footer a{color:var(--pl-magenta)}
+@media (max-width:560px){
+  h1{font-size:1.15rem} .nom{font-size:.88rem} .cuando{margin-left:0; width:100%}
+}
+</style>
+</head>
+<body>
+
+<div class="top"><div class="top-in">
+  <div class="marca">
+    <h1>Premier<em>ML</em></h1>
+    <span class="temp mono" id="temporada"></span>
+  </div>
+  <div id="salud"><span style="color:#c3aecb">consultando el servicio…</span></div>
+</div></div>
+
+<div class="wrap">
+  <h2>Estado del dato</h2>
+  <div id="datos"><span class="txt">consultando…</span></div>
+
+  <h2>Fechas</h2>
+  <div id="fechas"></div>
+  <div id="cabecera"></div>
+  <div id="partidos"></div>
+</div>
+
+<footer>
+  Las fechas jugadas muestran la predicción <b>registrada antes del inicio de la fecha</b>,
+  no una recalculada hoy. La próxima se predice en vivo contra la tabla Gold. Una fecha
+  que todavía no tiene features responde 409 y dice cuál sí.
+  <br>API: <a href="/docs">/docs</a> · <a href="/health">/health</a>
+  En las fechas jugadas se muestra además <b>cuánto pagaba cada resultado</b> (cuota de
+  cierre de football-data). Esas cuotas <b>no son features del modelo</b>: se publican
+  después del partido, así que en producción no llegarían a tiempo.
+  <br><br>Trabajo práctico académico (ITBA). No es un sitio oficial de la Premier League.
+  Los escudos son propiedad de sus clubes y se cargan del CDN público de la liga.
+</footer>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const pct = (x) => (x * 100).toFixed(0) + "%";
+const fmt = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d) ? String(iso).slice(0, 16)
+    : d.toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+};
+
+let SEASON = null;
+let EQUIPOS = {};
+let CAL = null;
+
+async function json(url) {
+  const r = await fetch(url);
+  const b = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, body: b };
+}
+
+/* El escudo sale del CDN de la Premier, por `team_code` (el `code` de FPL, estable entre
+   temporadas). Si falta el código o la imagen no carga, se cae a las iniciales: la página
+   nunca depende de un recurso externo para ser legible. */
+function escudo(short) {
+  const eq = EQUIPOS[short];
+  const alt = eq ? eq.nombre : short;
+  if (!eq || eq.code == null) return `<span class="escudo ph">${short}</span>`;
+  return `<img class="escudo" loading="lazy" alt="${alt}" title="${alt}"
+    src="https://resources.premierleague.com/premierleague/badges/70/t${eq.code}.png"
+    onerror="this.outerHTML='<span class=&quot;escudo ph&quot;>${short}</span>'">`;
+}
+
+/* El estado del dato, y el botón que dispara el pipeline.
+
+   El POST no corre el pipeline adentro del request: le pide al Cloud Run Job que lo
+   corra, y contesta 202 con un id. Después se pregunta por ese id hasta que termina.
+   Por eso acá hay polling y no una espera: la corrida tarda minutos y un request de
+   Cloud Run no puede durar eso. */
+let TAREA = null;
+
+async function estadoDatos() {
+  const { ok, body } = await json("/actualizar");
+  if (!ok) { $("#datos").innerHTML = `<span class="txt">—</span>`; return; }
+
+  const corriendo = body.en_curso || TAREA;
+  const hasta = CAL && CAL.hasta_gameweek;
+
+  const texto = corriendo
+    ? `<b>Actualizando el dato…</b><span class="por">
+        ${corriendo.destino === "local" ? "pipeline.pre_deadline como subproceso"
+                                        : "Cloud Run Job"} ·
+        ${corriendo.segundos ? Math.round(corriendo.segundos) + "s" : ""}
+        Tarda unos minutos: baja las cuatro fuentes, rearma Silver y recalcula Gold.</span>`
+    : `Gold llega hasta la <b>GW${hasta ?? "?"}</b>${
+        body.proxima_predecible ? ` · predecible: <b>GW${body.proxima_predecible}</b>` : ""}
+       <span class="por">${body.motivo}</span>`;
+
+  const btn = corriendo
+    ? `<button class="btn" disabled><span class="spin"></span>en curso</button>`
+    : `<button class="btn ${body.hace_falta ? "" : "quieto"}" id="btn-act">
+         ${body.hace_falta ? "Actualizar datos" : "Actualizar igual"}</button>`;
+
+  $("#datos").innerHTML = `<span class="txt">${texto}</span>${btn}`;
+  const b = $("#btn-act");
+  if (b) b.addEventListener("click", disparar);
+}
+
+async function disparar() {
+  const b = $("#btn-act");
+  if (b) { b.disabled = true; b.innerHTML = `<span class="spin"></span>lanzando`; }
+
+  const r = await fetch("/actualizar", { method: "POST" });
+  const body = await r.json().catch(() => ({}));
+
+  if (!r.ok) {
+    $("#datos").innerHTML =
+      `<span class="txt"><b>No se pudo lanzar</b><span class="por">(${r.status})
+        ${body.detail || "sin detalle"}</span></span>`;
+    return;
+  }
+  TAREA = body;
+  estadoDatos();
+  seguir(body.id);
+}
+
+async function seguir(id) {
+  const { ok, body } = await json(`/actualizar/${id}`);
+  if (!ok) { TAREA = null; estadoDatos(); return; }
+  TAREA = body;
+
+  if (body.estado === "corriendo" || body.estado === "lanzada") {
+    estadoDatos();
+    setTimeout(() => seguir(id), 4000);
+    return;
+  }
+
+  TAREA = null;
+  if (body.estado === "ok") {
+    // Gold cambió por afuera del proceso: se recarga todo lo que depende de él.
+    await salud();
+    CAL = await calendario(SEASON);
+    const gw = CAL && (CAL.proxima_predecible ?? CAL.hasta_gameweek);
+    if (gw) fecha(gw);
+  } else {
+    $("#datos").innerHTML =
+      `<span class="txt"><b>La actualización falló</b>
+        <span class="por">${(body.detalle || "").slice(0, 400)}</span></span>`;
+    return;
+  }
+  estadoDatos();
+}
+
+async function salud() {
+  const { ok, body } = await json("/health");
+  const sano = ok && body.status === "ok";
+  $("#salud").innerHTML = `
+    <span class="pill ${sano ? "ok" : "mal"}">${body.status || "sin respuesta"}</span>
+    <span class="dato">modelo <b>${body.model_version || "—"}</b></span>
+    <span class="dato">features <b>${body.feature_set_version || "—"}</b></span>
+    <span class="dato">semillas <b>${body.n_seeds ?? "—"}</b></span>
+    <span class="dato">backend <b>${body.backend || "—"}</b></span>
+    <span class="dato">gold <b>${body.gold_built_at || "—"}</b></span>
+    ${body.detail ? `<span class="pill mal">${body.detail}</span>` : ""}`;
+  return body;
+}
+
+async function calendario(season) {
+  const { ok, body } = await json(`/calendario/${season}`);
+  if (!ok) {
+    $("#fechas").innerHTML = `<div class="aviso error">No hay calendario de ${season}.</div>`;
+    return null;
+  }
+  const prox = body.proxima_predecible;
+  $("#fechas").innerHTML = body.fechas.map((f) => {
+    const esProx = f.gameweek === prox;
+    const sinDatos = f.estado === "no_preparada";
+    const sub = esProx ? "predecible"
+      : f.estado === "jugada" ? `${f.n_con_resultado}/${f.n_partidos}`
+      : f.estado === "en_curso" ? "en curso"
+      : "sin datos";
+    const titulo = sinDatos
+      ? `La GW${f.gameweek} todavía no tiene features en Gold: no se puede predecir`
+      : `corte ${fmt(f.corte)}`;
+    return `<button class="fecha ${sinDatos ? "gris" : ""}" data-gw="${f.gameweek}"
+              aria-selected="false" title="${titulo}">
+              <span class="gw">GW${f.gameweek}</span>
+              <span class="sub ${esProx ? "prox" : ""}">${sub}</span>
+            </button>`;
+  }).join("");
+  $("#fechas").querySelectorAll(".fecha").forEach((b) =>
+    b.addEventListener("click", () => fecha(Number(b.dataset.gw))));
+  return body;
+}
+
+function marcar(gw) {
+  $("#fechas").querySelectorAll(".fecha").forEach((b) =>
+    b.setAttribute("aria-selected", String(Number(b.dataset.gw) === gw)));
+}
+
+async function fecha(gw) {
+  marcar(gw);
+  $("#cabecera").innerHTML = "";
+  $("#partidos").innerHTML = `<div class="cargando">cargando la fecha ${gw}…</div>`;
+
+  const { ok, status, body } = await json(`/predict/${SEASON}/${gw}`);
+  if (!ok) {
+    const extra = body.proxima_predecible
+      ? ` La próxima predecible es la <b>GW${body.proxima_predecible}</b>.` : "";
+    $("#partidos").innerHTML =
+      `<div class="aviso">(${status}) ${body.detail || "sin detalle"}${extra}</div>`;
+    return;
+  }
+
+  const enVivo = body.origen === "en_vivo";
+  const reconstruida = body.pre_deadline === false;
+  $("#cabecera").innerHTML = `
+    <span class="pill ${enVivo ? "neutro" : "ok"}">
+      ${enVivo ? "predicha en vivo" : "registro congelado"}</span>
+    ${reconstruida ? `<span class="pill avi">emitida después del corte</span>` : ""}
+    ${body.accuracy != null
+      ? `<span class="pill ${body.accuracy >= 0.5 ? "ok" : "avi"}">acierto ${pct(body.accuracy)}</span>` : ""}
+    <span class="nota">corte ${fmt(body.corte)} · emitida ${fmt(body.predicted_at)} ·
+      modelo <span class="mono">${body.model_version}</span></span>`;
+
+  if (reconstruida) {
+    $("#cabecera").insertAdjacentHTML("afterend",
+      `<div class="aviso">Esta fecha no tiene ninguna predicción anterior a su inicio: se
+       muestra la más temprana que hay, que es una reconstrucción y no cuenta como
+       evidencia.</div>`);
+  }
+
+  const et = { home: "L", draw: "E", away: "V" };
+  $("#partidos").innerHTML = body.predictions.map((m) => {
+    const jugado = m.target_1x2 != null;
+    return `
+    <div class="partido">
+      <div class="linea">
+        <span class="lado">${escudo(m.home_short)}<span class="nom">${m.home_short}</span></span>
+        ${jugado ? `<span class="marcador">${m.home_goals}–${m.away_goals}</span>`
+                 : `<span class="marcador" style="background:var(--rule);color:var(--muted)">vs</span>`}
+        <span class="lado der">${escudo(m.away_short)}<span class="nom">${m.away_short}</span></span>
+        <span class="cuando">${fmt(m.kickoff_time)}</span>
+      </div>
+      <div class="barra">
+        <div class="h" style="width:${m.p_home * 100}%">${m.p_home > .12 ? pct(m.p_home) : ""}</div>
+        <div class="d" style="width:${m.p_draw * 100}%">${m.p_draw > .12 ? pct(m.p_draw) : ""}</div>
+        <div class="a" style="width:${m.p_away * 100}%">${m.p_away > .12 ? pct(m.p_away) : ""}</div>
+      </div>
+      <div class="leyenda">${["home", "draw", "away"].map((c) => {
+        const nombre = { home: "local", draw: "empate", away: "visita" }[c];
+        const color = { home: "--local", draw: "--empate", away: "--visita" }[c];
+        const cuota = m["cuota_" + c];
+        const salio = jugado && m.target_1x2 === c;
+        return `<i><b style="background:var(${color})"></b>${nombre} ${pct(m["p_" + c])}
+          ${cuota != null
+            ? `<span class="pago ${salio ? "gano" : ""}">pagaba ${cuota.toFixed(2)}</span>` : ""}
+          </i>`;
+      }).join("")}</div>
+      <div class="pie">
+        <span>anuncia <b>${et[m.prediccion]}</b> (${pct(m.confianza)})</span>
+        ${jugado ? `<span>real <b>${et[m.target_1x2]}</b></span>
+                    <span class="pill ${m.acierto ? "ok" : "mal"}">${m.acierto ? "acertó" : "erró"}</span>`
+                 : `<span>sin jugar</span>`}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+(async function () {
+  EQUIPOS = await fetch("/escudos.json").then((r) => r.json()).catch(() => ({}));
+  const s = await salud();
+  SEASON = new URLSearchParams(location.search).get("season") || s.season_actual || "2026-27";
+  $("#temporada").textContent = SEASON;
+
+  CAL = await calendario(SEASON);
+  if (!CAL) return;
+  await estadoDatos();
+
+  const conDatos = CAL.fechas.filter((f) => f.estado !== "no_preparada");
+  const inicial = CAL.proxima_predecible
+    ?? (conDatos.length ? conDatos[conDatos.length - 1].gameweek : null);
+  if (inicial) fecha(inicial);
+})();
+</script>
+</body>
+</html>

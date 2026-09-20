@@ -73,10 +73,12 @@ def gameweeks_jugadas(season: str) -> list[int]:
 def evaluar_fecha(season: str, gameweek: int, gold: pd.DataFrame,
                   boosters, meta) -> dict | None:
     """Una fecha: predicción del modelo contra el resultado y contra los baselines."""
-    obj = srv.objetivos_de_fecha(season, gameweek)
-    from features import gold_tp
-
-    feats = gold_tp.construir(objetivos=obj, con_target=False)
+    # Lookup sobre Gold, no reconstrucción. Dos razones, y la segunda pesa más que la
+    # primera: reconstruir costaba ~25 s por fecha (38 al final de temporada, o sea un
+    # comando incorrible), pero además usaba las features de HOY, que no son
+    # necesariamente las que se sirvieron. El monitoreo del ciclo cerrado tiene que medir
+    # el artefacto que existió, no el que existiría si predijéramos de nuevo.
+    feats = srv.filas_gold(season, gameweek, gold=gold)
     X = feats[meta["feature_names"]].to_numpy(dtype=np.float32)
     P = srv.predecir_proba(boosters, X)
 
@@ -264,8 +266,13 @@ def main() -> None:
         print(f"  {k:28s} {v:.4f}" if isinstance(v, float) else f"  {k:28s} {v}")
     print(f"  {'IC 95% de la accuracy':28s} [{ic[0]:.3f}, {ic[1]:.3f}]")
     if r["partidos"] < 100:
-        print(f"\n  ⚠️  Con {r['partidos']} partidos el intervalo es enorme: "
-              f"±{(ic[1] - ic[0]) / 2 * 100:.0f} puntos. Todavía no se puede concluir nada.")
+        # Sin emoji a proposito: la consola de Windows es cp1252 y un caracter
+        # fuera de esa tabla hace fallar el print entero -- con las metricas ya
+        # calculadas y el CSV ya escrito. El comando terminaba en error por un
+        # adorno. Es el unico print del repo con este problema; el resto de los
+        # simbolos raros viven en docstrings y nunca llegan a stdout.
+        print(f"\n  AVISO: con {r['partidos']} partidos el intervalo es enorme: "
+              f"+/-{(ic[1] - ic[0]) / 2 * 100:.0f} puntos. Todavía no se puede concluir nada.")
 
     comparaciones = comparar_reglas(df)
     if comparaciones:

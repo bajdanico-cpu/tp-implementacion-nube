@@ -41,7 +41,7 @@ import pandas as pd
 
 from common.config import CFG
 from common.logging_setup import get_logger, setup
-from common.storage import BACKEND, archivar, versiones, versiones_root
+from common.storage import archivar, backend, versiones, versiones_root
 
 log = get_logger(__name__)
 
@@ -105,7 +105,7 @@ def restaurar(layer: str, tabla: str, stamp: str) -> None:
     destino = CAPAS[layer]() / f"{tabla}{origen.suffix}"
 
     archivar(destino, layer, etiqueta=f"reemplazada al restaurar {stamp}")
-    BACKEND.write_bytes(destino, BACKEND.read_bytes(origen))
+    backend().write_bytes(destino, backend().read_bytes(origen))
     log.info("RESTAURADO %s.%s <- %s (%s filas, etiqueta '%s')",
              layer, tabla, stamp, v.get("filas"), v.get("etiqueta", ""))
 

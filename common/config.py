@@ -130,15 +130,51 @@ class Config:
 
     # ---------- storage ----------
 
+    # Las variables de entorno PISAN a config.yaml. Es lo que permite configurar Cloud
+    # Run sin reconstruir la imagen: el mismo contenedor corre contra el disco local o
+    # contra un bucket segun TP_STORAGE_BACKEND. `.env.example` las prometia desde el
+    # dia uno y ninguna se leia.
+    @property
+    def gameweeks(self) -> int:
+        """Fechas de una temporada. Ver el comentario en config.yaml."""
+        return int(self.raw["seasons"].get("gameweeks", 38))
+
     @property
     def backend(self) -> str:
-        return self.raw["storage"]["backend"]
+        return os.getenv("TP_STORAGE_BACKEND") or self.raw["storage"]["backend"]
 
     @property
     def data_root(self) -> Path:
         """Raíz de datos. Absoluta, para que el pipeline corra desde cualquier cwd."""
-        root = Path(self.raw["storage"]["root"])
+        root = Path(os.getenv("TP_DATA_ROOT") or self.raw["storage"]["root"])
         return root if root.is_absolute() else PROJECT_ROOT / root
+
+    @property
+    def models_root(self) -> Path:
+        """Raíz de los modelos versionados.
+
+        Vive fuera de `data_root` a proposito: `data/` se regenera entero desde las
+        fuentes y `models/` no -- un `.ubj` perdido no se recupera bajando nada.
+        """
+        root = Path(os.getenv("TP_MODELS_ROOT") or "models")
+        return root if root.is_absolute() else PROJECT_ROOT / root
+
+    @property
+    def gcp(self) -> dict[str, Any]:
+        return self.raw["storage"].get("gcp") or {}
+
+    @property
+    def gcs_bucket(self) -> str | None:
+        return os.getenv("TP_GCS_BUCKET") or self.gcp.get("bucket")
+
+    @property
+    def gcp_project(self) -> str | None:
+        return os.getenv("TP_GCP_PROJECT") or self.gcp.get("project_id")
+
+    @property
+    def gcs_prefix(self) -> str:
+        """Prefijo opcional dentro del bucket, por si se comparte con otra cosa."""
+        return (os.getenv("TP_GCS_PREFIX") or self.gcp.get("prefix") or "").strip("/")
 
     def bronze_dir(self, source: str, season: str, dataset: str, stamp: str | None = None) -> Path:
         """`data/bronze/{source}/{season}/{dataset}/ingested_at=<stamp>/`.

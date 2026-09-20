@@ -76,6 +76,23 @@ def cargar() -> pd.DataFrame:
     return read_table(TABLA, layer="gold")
 
 
+def sin_inferencia(gold: pd.DataFrame) -> pd.DataFrame:
+    """Saca las filas de la fecha que todavía no se jugó.
+
+    Desde que Gold materializa la próxima fecha para que el serving la sirva con un
+    lookup, la tabla tiene filas sin `target_1x2`. Hoy quedan afuera igual porque los dos
+    caminos de entrenamiento filtran por TEMPORADA y la inferencia es siempre de la
+    actual — pero eso es una protección indirecta, que se cae el día que alguien
+    materialice una fecha de otra temporada. Ésta es directa, y cuesta una línea.
+    """
+    if "split" not in gold.columns:
+        return gold
+    fuera = gold["split"] == "inferencia"
+    if fuera.any():
+        log.info("Se excluyen %d filas de inferencia (sin target)", int(fuera.sum()))
+    return gold[~fuera]
+
+
 # Filtros de las filas que se usan como OBJETIVO de entrenamiento. Lo importante: las
 # filas excluidas siguen contando como HISTORIA para las ventanas de los partidos
 # posteriores, porque las features de Gold ya vienen calculadas sobre la secuencia
@@ -120,7 +137,7 @@ def preparar(gold: pd.DataFrame | None = None,
              con_validacion: bool = True,
              datos: str | None = None) -> Split:
     """Arma el split temporal del canvas."""
-    gold = cargar() if gold is None else gold
+    gold = sin_inferencia(cargar() if gold is None else gold)
     features = features or spec.FEATURES
 
     test_season = CFG.holdout_season
@@ -173,6 +190,7 @@ def train_completo(gold: pd.DataFrame, features: list[str],
     seguir significando algo.
     """
     temporadas = CFG.seasons_a_entrenar(incluir_holdout)
+    gold = sin_inferencia(gold)
     d = filtrar_train(gold[gold["season"].isin(temporadas)], datos)
     log.info("Refit final sobre %s: %d filas", temporadas, len(d))
     return matriz(d, features), codificar(d["target_1x2"])

@@ -40,34 +40,74 @@ from common.config import CFG, PROJECT_ROOT, utc_stamp
 from common.logging_setup import get_logger, setup
 from common.storage import read_table
 from eda.baselines import CLASES_ORD
-from features import gold_tp, spec
-from serving import decision
-from training import betting, registry
+from features import spec
+from serving import decision, registro
+from serving.registro import PREDICCIONES  # noqa: F401  (se reexporta por compatibilidad)
+from training import registry
 
 log = get_logger(__name__)
 
-PREDICCIONES = PROJECT_ROOT / "data" / "predicciones"
+GOLD = "gold_tp_match"
+
+# Cuanto puede tener la historia usada respecto del corte antes de considerar la fila
+# rancia. El umbral tiene que tolerar el paron FIFA: entre la GW5 y la GW6 de 2026-27 hay
+# 22 dias de calendario, y eso es normal, no es un dato viejo.
+MAX_DIAS_HISTORIA = 60
+
+
+class FechaNoPreparada(Exception):
+    """La fecha existe en el calendario pero todavia no tiene fila en Gold.
+
+    Es el caso de pedir la 7 estando en la 5. Antes devolvia 200 con features rancias
+    --historia hasta la 4, `dias_descanso` de 35-- y nada en la respuesta lo decia.
+    """
+
+    def __init__(self, season: str, gameweek: int, proxima: int | None):
+        self.season, self.gameweek, self.proxima = season, gameweek, proxima
+        if proxima is None:
+            detalle = ("no hay ninguna fecha predecible: o termino la temporada, o falta "
+                       "correr el pipeline (python -m features.gold_tp)")
+        else:
+            detalle = f"la proxima predecible es la GW{proxima}"
+        super().__init__(f"{season} GW{gameweek} todavia no esta preparada; {detalle}.")
 
 
 # ---------------------------------------------------------------------------
 # Objetivos: los partidos a predecir
 # ---------------------------------------------------------------------------
 
-def objetivos_de_fecha(season: str, gameweek: int) -> pd.DataFrame:
-    """Los fixtures de una gameweek, con su corte, listos para el ensamblado.
+def cargar_gold() -> pd.DataFrame:
+    return read_table(GOLD, layer="gold")
 
-    El corte es el inicio de la fecha: `min(kickoff_time)` de esa gameweek. Todos los
-    partidos de la fecha comparten corte, así que se predicen con la misma información.
+
+def proxima_en_gold(gold: pd.DataFrame, season: str | None = None) -> int | None:
+    """La fecha que se puede predecir, leida de Gold. Sin tocar Silver.
+
+    Es `min(gameweek)` entre las filas marcadas como inferencia. Quien decidio que esa
+    fecha ya estaba lista es problema de `features/calendario.py`, que corre en el
+    pipeline; aca solo se lee el resultado de esa decision.
     """
-    fx = read_table("fact_fixture")
-    d = fx[(fx["season"] == season) & (fx["gameweek"] == gameweek)]
-    if d.empty:
-        raise ValueError(f"No hay fixtures para {season} GW{gameweek} en fact_fixture.")
+    season = season or CFG.current_season
+    inf = gold[(gold["season"] == season) & (gold["split"] == "inferencia")]
+    return None if inf.empty else int(inf["gameweek"].min())
 
-    obj = d[["season", "gameweek", "fixture_id", "kickoff_time",
-             "home_short", "away_short"]].copy()
-    obj["corte"] = obj["kickoff_time"].min()
-    return obj.sort_values("kickoff_time").reset_index(drop=True)
+
+def filas_gold(season: str, gameweek: int,
+               gold: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Las filas de Gold de esa fecha, ordenadas por kickoff. Es un LOOKUP, no un calculo.
+
+    Antes aca se llamaba a `gold_tp.construir(objetivos=...)` y se reconstruian las 279
+    features desde Silver en cada request: 25 segundos, y la obligacion de meter las ocho
+    tablas de Silver dentro de la imagen. Las features ya se calcularon --con el mismo
+    codigo del entrenamiento, que es lo que evita el train/serve skew-- cuando corrio el
+    pipeline. Recalcularlas era hacer dos veces el mismo trabajo y arriesgar que diera
+    distinto.
+    """
+    gold = cargar_gold() if gold is None else gold
+    d = gold[(gold["season"] == season) & (gold["gameweek"] == gameweek)]
+    if d.empty:
+        raise FechaNoPreparada(season, gameweek, proxima_en_gold(gold, season))
+    return d.sort_values("kickoff_time").reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
@@ -80,37 +120,46 @@ def cargar_modelo(nombre: str | None = None, version: str | None = None):
     Devuelve `(boosters, metadata)`. Son varios porque el entrenamiento promedia semillas:
     la predicción tiene que promediar las mismas.
     """
-    import xgboost as xgb
-
     nombre = nombre or CFG.modelo
     if version:
         ruta = registry.RAIZ / nombre / version
     else:
         v = registry.produccion(nombre)
         if v is not None:
+            # Una versión puede tener toda su trazabilidad y ningún binario: los `.ubj`
+            # están en `.gitignore` y `metadata.json` no, así que un `git checkout` deja
+            # la carpeta llena de papeles y vacía de modelo. Si la de producción está
+            # así hay que decirlo con ese nombre, no caer a otra por las dudas: servir
+            # en silencio un modelo que nadie eligió es peor que no servir.
+            if not registry.tiene_boosters(v):
+                raise FileNotFoundError(
+                    f"La versión de producción {nombre}/{v.version} no tiene archivos "
+                    f".ubj. Reentrená con `python -m training.run`, bajá los binarios "
+                    f"del bucket, o promové otra: `python -m training.registry --listar`.")
             ruta = v.ruta
         else:
-            dirs = sorted((registry.RAIZ / nombre).glob("2*"))
-            if not dirs:
+            # El fallback elige la última versión SERVIBLE, no la última a secas. En
+            # septiembre de 2026 la última por nombre era una que había llegado por git
+            # sin binarios: dejó todo /predict en 503 y nada lo explicaba.
+            candidatas = registry.servibles(nombre)
+            if not candidatas:
                 raise FileNotFoundError(
-                    f"No hay ningún modelo en models/{nombre}/. "
+                    f"No hay ningún modelo servible en models/{nombre}/. "
                     f"Corré: python -m training.run --model {nombre}")
-            ruta = dirs[-1]
-            log.warning("No hay PRODUCTION.json; se usa la última versión: %s", ruta.name)
+            ruta = candidatas[-1].ruta
+            log.warning("No hay PRODUCTION.json; se usa la última versión servible: %s. "
+                        "Fijala con `python -m training.registry --promover %s`.",
+                        ruta.name, ruta.name)
 
-    meta = json.loads((ruta / "metadata.json").read_text(encoding="utf-8"))
-    archivos = sorted(ruta.glob("model*.ubj"))
+    meta = registry.cargar_metadata(registry.Version(nombre, ruta.name, ruta))
+    archivos = registry.boosters_de(registry.Version(nombre, ruta.name, ruta))
     if not archivos:
         raise FileNotFoundError(f"No hay archivos .ubj en {ruta}")
 
-    boosters = []
-    for f in archivos:
-        b = xgb.Booster()
-        b.load_model(str(f))
-        # Se sirve en CPU aunque se haya entrenado en GPU: el .ubj es portable y el
-        # bloque 7 del canvas dice explícitamente que la inferencia va sin GPU.
-        b.set_param({"device": "cpu"})
-        boosters.append(b)
+    # Se sirve en CPU aunque se haya entrenado en GPU: el .ubj es portable y el bloque 7
+    # del canvas dice explícitamente que la inferencia va sin GPU. La carga la hace
+    # `registry.cargar_booster`, que es el unico lugar del repo que sabe hacerlo.
+    boosters = [registry.cargar_booster(f, device="cpu") for f in archivos]
 
     log.info("Modelo %s versión %s — %d semillas, %d features",
              nombre, ruta.name, len(boosters), meta["n_features"])
@@ -144,17 +193,24 @@ def predecir_proba(boosters, X: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def predecir(season: str, gameweek: int, nombre: str | None = None,
-             version: str | None = None) -> pd.DataFrame:
-    """Las tres probabilidades de cada partido de la fecha, más la decisión de apuesta."""
-    boosters, meta = cargar_modelo(nombre, version)
+             version: str | None = None,
+             gold: pd.DataFrame | None = None,
+             modelo: tuple | None = None) -> pd.DataFrame:
+    """Las tres probabilidades de cada partido de la fecha, mas la decision de apuesta.
+
+    La fila se resuelve ANTES de cargar el modelo. Al reves, un modelo roto devolvia 503
+    hasta para una fecha que no existia, y ese error tapaba al que importaba.
+    """
+    feats = filas_gold(season, gameweek, gold)
+    log.info("Prediciendo %s GW%d - %d partidos, corte %s (Gold del %s)",
+             season, gameweek, len(feats), feats["corte"].iloc[0],
+             feats["gold_built_at"].iloc[0] if "gold_built_at" in feats else "?")
+
+    # `modelo` permite inyectar los boosters ya cargados. Sin eso, el servicio releía
+    # cinco `.ubj` del disco en cada request y se comía casi un segundo por pedido, que
+    # era justo lo que el lookup venía a eliminar.
+    boosters, meta = cargar_modelo(nombre, version) if modelo is None else modelo
     features = _validar_features(meta)
-
-    obj = objetivos_de_fecha(season, gameweek)
-    log.info("Prediciendo %s GW%d — %d partidos, corte %s",
-             season, gameweek, len(obj), obj["corte"].iloc[0])
-
-    feats = gold_tp.construir(objetivos=obj, con_target=False)
-    feats = feats.sort_values("kickoff_time").reset_index(drop=True)
 
     X = feats[features].to_numpy(dtype=np.float32)
     P = predecir_proba(boosters, X)
@@ -180,6 +236,7 @@ def predecir(season: str, gameweek: int, nombre: str | None = None,
     for lado in spec.LADOS:
         out[f"hist_kickoff_{lado}"] = feats[f"hist_kickoff_{lado}"]
     _assert_sin_leakage(out, feats)
+    _assert_historia_fresca(feats)
     return out
 
 
@@ -193,13 +250,30 @@ def _assert_sin_leakage(out: pd.DataFrame, feats: pd.DataFrame) -> None:
                 f"{int(malas.sum())} predicciones usan historia posterior al corte ({lado}).")
 
 
-def guardar(pred: pd.DataFrame) -> Path:
-    PREDICCIONES.mkdir(parents=True, exist_ok=True)
-    s, gw = pred["season"].iloc[0], int(pred["gameweek"].iloc[0])
-    ruta = PREDICCIONES / f"{s}_GW{gw:02d}_{utc_stamp()}.parquet"
-    pred.to_parquet(ruta, index=False)
-    log.info("Predicción registrada en %s", ruta)
-    return ruta
+def _assert_historia_fresca(feats: pd.DataFrame,
+                            max_dias: int = MAX_DIAS_HISTORIA) -> None:
+    """El control simetrico del anti-leakage: historia demasiado VIEJA.
+
+    `_assert_sin_leakage` mira una sola direccion --que no entre informacion del futuro--
+    y esa asimetria era un agujero real: predecir una fecha lejana usaba la historia que
+    hubiera, sin error y sin aviso. Ahora que el servicio sirve un artefacto pre-calculado
+    en vez de construirlo, este es el unico control que queda entre una fila rancia y el
+    usuario.
+    """
+    corte = feats["corte"]
+    hk = feats[[f"hist_kickoff_{lado}" for lado in spec.LADOS]].max(axis=1)
+    edad = (corte - hk).dt.days
+    viejas = edad.notna() & (edad > max_dias)
+    if viejas.any():
+        raise AssertionError(
+            f"{int(viejas.sum())} filas usan historia de hace mas de {max_dias} dias "
+            f"(maximo: {int(edad.max())}). Gold se construyo con un Silver "
+            f"desactualizado: corre el pipeline antes de predecir.")
+
+
+def guardar(pred: pd.DataFrame, si_existe: str = "saltar") -> Path | None:
+    """Delega en `serving/registro.py`, que es donde vive el registro y su deduplicacion."""
+    return registro.guardar(pred, si_existe=si_existe)
 
 
 # ---------------------------------------------------------------------------

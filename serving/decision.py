@@ -79,7 +79,9 @@ from eda.baselines import CLASES_ORD
 
 log = get_logger(__name__)
 
-PREDICCIONES = PROJECT_ROOT / "data" / "predicciones"
+# Una sola definición en todo el repo: la carpeta cuelga de `CFG.data_root`, no de
+# `PROJECT_ROOT`, para que viaje con el dato cuando el backend deje de ser local.
+from serving.registro import PREDICCIONES  # noqa: E402
 
 I_DRAW = list(CLASES_ORD).index("draw")
 NO_DRAW = [i for i, c in enumerate(CLASES_ORD) if c != "draw"]
