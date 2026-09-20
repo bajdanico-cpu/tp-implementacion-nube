@@ -74,8 +74,27 @@ curl -s "${SERVICE_URL}/predict/2026-27/4" | jq .
 curl -s "${SERVICE_URL}/predict/2026-27/4" \
   | jq '.predictions[] | {home_short, away_short, p_home, p_draw, p_away, prediccion}'
 
-
 ```
+
+## Smoke test de carga (`scripts/smoke_load.py`)
+
+- Dispara N requests GET y reporta throughput y latencia (p50/p95/p99). Solo usa la librería estándar.
+- El `max` de latencia suele ser el cold start de Cloud Run.
+- URL base, por prioridad: parámetro `--url` > variable de entorno `SERVICE_URL` > URL fija del script. 
+
+Para faciltar la prueba desde Powershell
+```powershell
+$env:SERVICE_URL = "https://premier-ml-api-tz75rnogkq-uc.a.run.app"
+```
+
+```bash 
+python scripts/smoke_load.py                          # 10 requests a /predict/2026-27/4
+python scripts/smoke_load.py --n 20 --concurrency 4
+python scripts/smoke_load.py --endpoint /predict/2026-27/5
+python scripts/smoke_load.py --url http://127.0.0.1:8080
+```
+
+
 
 
 ## Smoke test de carga (`scripts/smoke_load.py`)
