@@ -53,6 +53,44 @@ Hace los ocho pasos de esta guía —APIs, bucket, las dos identidades, los perm
 imagen, el Job, el servicio— y al final **verifica** que haya quedado como tiene que
 quedar. Es idempotente: se puede correr dos veces.
 
+> ### Antes: llevar el dato a Cloud Shell
+>
+> **El dato no está en git.** `data/` y los `.ubj` están en `.gitignore` a propósito, así
+> que un `git pull` trae el código y nada más. Y regenerarlo allá **no sirve para la
+> demo**: ingestaría la GW5, que ya se jugó, y la transición que queremos mostrar
+> desaparecería.
+>
+> Dos caminos, según si tenés `gcloud` en tu máquina:
+>
+> **(a) Con gcloud local** — el más directo, y además sube Bronze, con lo cual la primera
+> corrida del Job no re-descarga cinco temporadas:
+>
+> ```bash
+> gcloud storage rsync -r data/bronze "gs://${BUCKET}/bronze"
+> gcloud storage rsync -r data/silver "gs://${BUCKET}/silver"
+> gcloud storage rsync -r data/gold   "gs://${BUCKET}/gold"
+> gcloud storage rsync -r data/predicciones "gs://${BUCKET}/predicciones"
+> gcloud storage rsync -r models "gs://${BUCKET}/models"
+> ```
+>
+> **(b) Sin gcloud local** — se arma un paquete de 5 MB y se sube por la interfaz:
+>
+> ```powershell
+> python -m scripts.bundle_demo          # deja demo-premier-ml.zip
+> ```
+>
+> En Cloud Shell: menú de tres puntos → **Subir** → elegí el zip. Después:
+>
+> ```bash
+> cd ~/tp-implementacion-nube
+> unzip -o ~/demo-premier-ml.zip
+> bash scripts/preparar_demo.sh
+> ```
+>
+> El paquete lleva Gold, las predicciones registradas, Silver y el modelo de producción.
+> **No lleva Bronze** (son ~300 MB), así que la primera corrida del Job baja las fuentes
+> de nuevo y tarda varios minutos más. Para la demo en vivo conviene (a).
+
 El resto de la guía explica qué hace cada paso y por qué. Conviene leerla antes de la
 defensa, porque las preguntas van a ser sobre eso y no sobre el script.
 

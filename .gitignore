@@ -37,6 +37,8 @@ models/**/*.ubj
 # Salidas regenerables
 training/output/
 features/output/
+# El paquete de la demo: se arma con `python -m scripts.bundle_demo`
+demo-premier-ml.zip
 
 # SO / editor
 Thumbs.db
