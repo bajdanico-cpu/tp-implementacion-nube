@@ -185,6 +185,12 @@ algo justamente porque no la vio.
 
 ### Subir
 
+> **¿Ya tenés un bucket con cosas adentro?** Reusalo: exportá `BUCKET` con su nombre
+> antes de correr nada y todo lo demás se acomoda. `rsync` **suma y actualiza**, no borra
+> lo que ya estaba, así que convivir con otros archivos no es problema. Lo único que el
+> código espera son los prefijos `gold/`, `predicciones/` y `models/`; si el bucket usa
+> otra estructura, `TP_GCS_PREFIX` mete todo bajo una carpeta y listo.
+
 ```bash
 gcloud storage buckets create "gs://${BUCKET}" --location="${REGION}" || true
 
@@ -469,7 +475,103 @@ confunde *"el modelo empeoró"* con *"la liga se puso impredecible"*.
 
 ---
 
-## 9 · Costos y apagado
+## 9 · Revisar todo desde la consola
+
+Todo lo de arriba se puede ver y tocar desde [console.cloud.google.com](https://console.cloud.google.com).
+Conviene conocer el camino de memoria: en la defensa es mucho más convincente mostrar el
+recurso vivo en la consola que leer un `curl`.
+
+**Antes de nada, arriba a la izquierda: el selector de proyecto.** Casi todo lo que
+"no aparece" es que estás parado en otro proyecto.
+
+### Los seis lugares que importan
+
+| Recurso | Dónde | Qué tiene que decir |
+|---|---|---|
+| **El dato** | Cloud Storage → Buckets → `TU-PROYECTO-premier-ml` | carpetas `gold/`, `predicciones/`, `models/`, y `silver/` y `bronze/` si subiste todo |
+| **El servicio** | Cloud Run → Servicios → `premier-ml-api` | verde, con URL pública y **Última implementación** reciente |
+| **El Job** | Cloud Run → **Trabajos** → `premier-ml-pipeline` | existe y, después de la demo, con una ejecución **Correcta** |
+| **La imagen** | Artifact Registry → `mlops-2026` | un solo tag `latest`, unos cientos de MB |
+| **Las identidades** | IAM y administración → Cuentas de servicio | `premier-api` y `premier-job` |
+| **Los builds** | Cloud Build → Historial | el build de la imagen, en verde |
+
+### El servicio, pestaña por pestaña
+
+Entrando a **Cloud Run → `premier-ml-api`**, cada solapa contesta una pregunta distinta de
+la clase 7:
+
+| Solapa | Qué mirar |
+|---|---|
+| **MÉTRICAS** | Latencia de solicitudes (p50/p95/p99), solicitudes por segundo, **porcentaje de errores** e instancias de contenedor. Es el tablero que la clase 7 llama *signos vitales*, y viene gratis |
+| **REGISTROS** | Los logs en vivo. Al ser JSON, cada línea se **despliega** y muestra `evento`, `gameweek`, `latencia_ms`, `model_version` como campos, no como texto |
+| **REVISIONES** | Una por despliegue, con el reparto de tráfico. Es acá donde se hace el **rollback**: elegís la revisión buena y le mandás el 100 % |
+| **YAML** | La definición completa: imagen, variables de entorno, memoria, la cuenta de servicio. Sirve para mostrar que `TP_STORAGE_BACKEND=gcs` está puesto |
+| **SEGURIDAD** | La cuenta de servicio con la que corre, y si permite invocaciones no autenticadas |
+
+### Rollback desde la consola (sin tocar la terminal)
+
+1. **Cloud Run → `premier-ml-api` → REVISIONES**
+2. Botón **⋮** en la revisión buena → **Administrar tráfico**
+3. Ponele **100 %** y guardá
+
+Tarda segundos y no reconstruye nada. Es exactamente el mismo mecanismo del `gcloud run
+services update-traffic`, y en pantalla se entiende mejor.
+
+### Los logs por campo, en el Explorador
+
+**Registro → Explorador de registros**, y en la caja de consulta:
+
+```
+resource.type="cloud_run_revision"
+jsonPayload.evento="prediccion"
+```
+
+Cada resultado se despliega y muestra los campos sueltos. Dos consultas que valen para la
+defensa:
+
+```
+jsonPayload.evento="prediccion" AND jsonPayload.latencia_ms > 500
+jsonPayload.evento="pipeline_disparo"
+```
+
+La segunda muestra quién pidió actualizar el dato y cuándo. Que eso se pueda preguntar
+—en vez de leer scrolleando— es el punto de haber emitido los logs en JSON.
+
+### El Job y sus ejecuciones
+
+**Cloud Run → Trabajos → `premier-ml-pipeline` → EJECUCIONES**. Cada corrida tiene su
+estado, su duración y sus logs. Es lo que hay que mostrar mientras el botón de la página
+está trabajando: la ejecución aparece ahí sola, disparada desde la web.
+
+### Permisos, para la pregunta incómoda
+
+**Cloud Storage → tu bucket → PERMISOS**. Se ven los dos bindings:
+
+- `premier-api@…` → **Visualizador de objetos de Storage**
+- `premier-job@…` → **Administrador de objetos de Storage**
+
+Si preguntan por qué dos cuentas y no una, la respuesta está en esa pantalla: un bug en el
+camino de lectura **no puede** corromper Gold, en vez de simplemente no deber hacerlo.
+
+### Lo que cuesta
+
+**Facturación → Informes**, filtrando por proyecto y agrupando por SKU. Con el escala a
+cero, Cloud Run tiende a cero y lo poco que aparece es almacenamiento. El control que no
+falla: si al día siguiente marca cero, quedó limpio.
+
+### Checklist de dos minutos antes de la defensa
+
+- [ ] Cloud Run → `premier-ml-api` en verde, y la URL abre la página
+- [ ] `/health` dice `ok` y `proxima_predecible: 5`
+- [ ] El calendario muestra las 38 fechas, con la 6 en adelante en gris
+- [ ] Cloud Run → Trabajos → `premier-ml-pipeline` existe
+- [ ] El panel *Estado del dato* dice que conviene actualizar
+- [ ] Explorador de registros con la consulta de `prediccion` ya cargada
+- [ ] Facturación abierta en otra pestaña, por si preguntan
+
+---
+
+## 10 · Costos y apagado
 
 **Lo que prendés, cuesta.** Por primera vez queda algo corriendo 24/7.
 
@@ -503,7 +605,7 @@ proyecto. Si al día siguiente marca cero, quedó limpio.
 
 ---
 
-## 10 · Cuando algo falla
+## 11 · Cuando algo falla
 
 | Síntoma | Causa casi siempre | Qué hacer |
 |---|---|---|
