@@ -4,8 +4,13 @@ Dispara N requests `GET` a `/predict/{season}/{gameweek}` y reporta la distribuc
 latencia (p50/p95/p99) y los errores. Sirve para dos cosas:
 
   1. **Ver latencia de verdad**, no un número teórico: el primer request paga el arranque en
-     frío de Cloud Run (cold start) y los siguientes salen tibios. Ojo que cada request arma
-     las features y carga el modelo de nuevo, así que tarda segundos, no milisegundos.
+     frío de Cloud Run (cold start) y los siguientes salen tibios.
+
+     Desde que el servicio sirve desde Gold, los requests tibios dan **decenas de
+     milisegundos** (p50 ~47 ms medido en local). Antes tardaban ~25 segundos porque cada
+     uno reconstruía las 279 features desde Silver y recargaba los cinco boosters; hoy la
+     fila ya está calculada y el modelo queda cacheado en el proceso. El `max` sigue siendo
+     el cold start, que ahora incluye bajar Gold y los modelos del bucket.
   2. **Producir tráfico** para después leerlo en los logs (`gcloud run services logs read`).
 
 Solo librería estándar: se corre en Cloud Shell sin instalar nada. No hay payload: la API
@@ -31,6 +36,9 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 DEFAULT_URL = "https://premier-ml-api-tz75rnogkq-uc.a.run.app"
+# La fecha 4 ya se jugó, así que la respuesta sale del registro congelado: es el camino
+# más liviano. Para medir el camino que corre el modelo, apuntar a la próxima predecible
+# (`--endpoint /predict/2026-27/5`), que es el que importa para el cold start.
 DEFAULT_ENDPOINT = "/predict/2026-27/4"
 
 
