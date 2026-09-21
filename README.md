@@ -16,6 +16,10 @@ predicción → registro → llegada del resultado real → cálculo de métrica
 
 ---
 
+> **¿Vas a desplegarlo en GCP?** Empezá por [`gcp/README.md`](gcp/README.md): dice qué
+> guía usar y en qué orden. El resumen: `bash scripts/verificar_bucket.sh` para ver qué
+> hay, y `bash scripts/preparar_demo.sh` para dejarlo andando.
+
 ## Setup
 
 Requiere **Python 3.14** (verificado en 3.14.3; hay wheels `cp314` para todas las dependencias).
