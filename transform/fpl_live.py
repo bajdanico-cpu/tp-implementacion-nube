@@ -42,7 +42,7 @@ import pandas as pd
 
 from common.config import CFG
 from common.logging_setup import get_logger
-from common.storage import (latest_snapshot, read_raw, read_raw_at,
+from common.storage import (backend, latest_snapshot, read_raw, read_raw_at,
                             snapshot_stamp)
 
 log = get_logger(__name__)
@@ -73,11 +73,12 @@ def _cargar(season: str, nombre: str, archivo: str, stamp: str | None = None):
 def gameweeks_disponibles(season: str) -> list[int]:
     """Qué gameweeks tienen snapshot de `event_live` en Bronze."""
     raiz = CFG.data_root / CFG.raw["storage"]["bronze_dir"] / SOURCE / season
-    if not raiz.exists():
-        return []
     gws = []
-    for d in raiz.iterdir():
-        if d.is_dir() and d.name.startswith("event_live_gw"):
+    # `list_dirs` y no `iterdir`: contra un bucket, `raiz.exists()` da False y esto
+    # devolvia [] en silencio. No explota -- se pierden las features de jugador de
+    # todas las fechas, sin que nadie se entere--, que es peor.
+    for d in backend().list_dirs(raiz):
+        if d.name.startswith("event_live_gw"):
             try:
                 gw = int(d.name.removeprefix("event_live_gw"))
             except ValueError:

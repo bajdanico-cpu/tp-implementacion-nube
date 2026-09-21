@@ -40,6 +40,15 @@ log = get_logger(__name__)
 TIMEOUT_METADATA_S = 3
 TIMEOUT_ADMIN_S = 20
 
+# Cada cuanto se le vuelve a preguntar a Cloud Run por una corrida en vuelo. La
+# pagina consulta cada 4 s; sin esto serian cuatro llamadas a la Admin API por
+# minuto y por pestania abierta, para un dato que cambia una vez.
+REFRESCO_S = 10
+
+# Si la Admin API no contesta nunca, igual hay que soltar: el Job tiene
+# --task-timeout 30m, asi que a los 35 minutos una corrida viva es una mentira.
+MAX_EN_VUELO_S = 35 * 60
+
 # Cuánto se recuerda una tarea terminada. Alcanza para que la página muestre el final.
 RETENCION_S = 3600
 
@@ -65,7 +74,8 @@ class Tarea:
     lanzada_at: float = field(default_factory=time.time)
     terminada_at: float | None = None
     destino: str = "local"      # local | cloud-run-job
-    referencia: str | None = None   # nombre de la ejecución en GCP, o el PID
+    referencia: str | None = None   # nombre de la operación en GCP, o el PID
+    consultada_at: float = 0.0      # última vez que se le preguntó a Cloud Run
 
     def como_dict(self) -> dict:
         seg = (self.terminada_at or time.time()) - self.lanzada_at
@@ -201,8 +211,81 @@ def _limpiar() -> None:
         _TAREAS.pop(k, None)
 
 
+def _refrescar(t: Tarea) -> Tarea:
+    """Le pregunta a Cloud Run como viene una corrida que se lanzo y no se espera.
+
+    `_lanzar_job` dispara y vuelve: no puede quedarse esperando, porque el pipeline
+    tarda minutos y un request de Cloud Run no dura eso. Pero entonces **nadie**
+    actualizaba el estado, y una corrida que fallaba a los cuatro minutos dejaba la
+    pagina girando para siempre. Peor: `en_curso()` seguia viendo esa tarea muerta,
+    asi que el proximo intento contestaba 409 y el boton quedaba inutilizable hasta
+    reiniciar el servicio.
+
+    En local no hace falta —hay un hilo esperando al subproceso— y por eso el agujero
+    no se veia hasta desplegar.
+    """
+    if t.destino != "cloud-run-job" or t.estado not in ("lanzada", "corriendo"):
+        return t
+
+    ahora = time.time()
+    if ahora - t.consultada_at < REFRESCO_S:
+        return t
+    t.consultada_at = ahora
+
+    if ahora - t.lanzada_at > MAX_EN_VUELO_S:
+        t.estado, t.terminada_at = "error", ahora
+        t.detalle = ("Sin noticias de Cloud Run pasados los 35 minutos. Mirá: "
+                     "gcloud run jobs executions list --job premier-ml-pipeline")
+        return t
+
+    if not t.referencia:
+        return t
+
+    import requests
+
+    try:
+        # `:run` devuelve una operación de larga duración, no la ejecución: se
+        # consulta esa, y cuando está `done` trae el resultado o el error.
+        r = requests.get(
+            f"https://run.googleapis.com/v2/{t.referencia}",
+            headers={"Authorization": f"Bearer {_token_metadata()}"},
+            timeout=TIMEOUT_ADMIN_S)
+        if r.status_code >= 300:
+            log.warning("Cloud Run devolvió %s al consultar %s", r.status_code, t.referencia)
+            return t
+        op = r.json()
+    except Exception as exc:  # noqa: BLE001 — una consulta que falla no mata la tarea
+        log.warning("No se pudo consultar la corrida %s: %s", t.referencia, exc)
+        return t
+
+    if not op.get("done"):
+        return t
+
+    t.terminada_at = ahora
+    if "error" in op:
+        t.estado = "error"
+        t.detalle = str(op["error"].get("message", op["error"]))[:400]
+    else:
+        # La ejecución terminó, pero "terminó" no es "salió bien": una tarea que
+        # devuelve exit(1) deja la operación `done` y sin `error`.
+        ejec = op.get("response", {})
+        fallidas = int(ejec.get("failedCount", 0) or 0)
+        ok = int(ejec.get("succeededCount", 0) or 0)
+        t.estado = "ok" if ok and not fallidas else "error"
+        t.detalle = (f"{ok} tarea(s) ok, {fallidas} fallida(s). "
+                     f"Logs: gcloud run jobs executions list "
+                     f"--job {os.getenv('TP_JOB_NAME', 'premier-ml-pipeline')}")
+
+    evento(log, "pipeline_fin", f"tarea {t.id}: {t.estado}",
+           tarea=t.id, estado=t.estado, destino=t.destino,
+           segundos=round(t.terminada_at - t.lanzada_at, 1))
+    return t
+
+
 def en_curso() -> Tarea | None:
-    return next((t for t in _TAREAS.values() if t.estado in ("lanzada", "corriendo")), None)
+    viva = next((t for t in _TAREAS.values()
+                 if t.estado in ("lanzada", "corriendo")), None)
+    return _refrescar(viva) if viva is not None else None
 
 
 def _token_metadata() -> str:
@@ -290,8 +373,11 @@ def disparar(motivo: str = "pedido desde la API") -> Tarea:
 
 
 def consultar(tid: str) -> Tarea | None:
-    return _TAREAS.get(tid)
+    t = _TAREAS.get(tid)
+    return _refrescar(t) if t is not None else None
 
 
 def listar() -> list[Tarea]:
+    for t in list(_TAREAS.values()):
+        _refrescar(t)
     return sorted(_TAREAS.values(), key=lambda t: t.lanzada_at, reverse=True)

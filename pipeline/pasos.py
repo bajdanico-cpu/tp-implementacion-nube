@@ -24,6 +24,7 @@ from typing import Any
 
 from common.config import CFG, utc_stamp
 from common.logging_setup import get_logger
+from common.storage import backend
 
 log = get_logger(__name__)
 
@@ -119,13 +120,16 @@ def correr(pasos: Sequence[Paso], desde: str | None = None,
 
 def _registrar(res: Resultado) -> Path:
     """Cada corrida deja su archivo. Es la evidencia de operación, no un log más."""
-    RUNS.mkdir(parents=True, exist_ok=True)
     ruta = RUNS / f"{res.corrida}.json"
-    ruta.write_text(json.dumps({
+    # Por el backend: con `write_text` el diario quedaba adentro del contenedor del
+    # Job, que se apaga al terminar. La corrida sobre la que uno quiere preguntar
+    # despues -- que paso fallo, cuanto tardo cada uno -- era la unica que no
+    # sobrevivia.
+    backend().write_bytes(ruta, json.dumps({
         "corrida": res.corrida,
         "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "ok": res.ok,
         "pasos": res.pasos,
-    }, indent=2, default=str), encoding="utf-8")
+    }, indent=2, default=str).encode("utf-8"))
     log.info("Corrida registrada en %s", ruta)
     return ruta

@@ -19,7 +19,7 @@ import pandas as pd
 
 from common.config import CFG, PROJECT_ROOT, utc_stamp
 from common.logging_setup import get_logger, setup
-from common.storage import archivar, read_table, write_table
+from common.storage import archivar, backend, read_table, write_table
 from eda.baselines import odds_a_probabilidades
 from features import (calendario, cold_start, competencias as fcomp, elo, h2h,
                       opta as fopta, pi_ratings, player_agg, spec, team_form as tf,
@@ -543,7 +543,11 @@ def run(escribir: bool = True) -> pd.DataFrame:
             # json es el prior CONGELADO con el que se entreno el modelo que esta
             # sirviendo, asi que perderlo es perder la reproducibilidad de ese modelo.
             archivar(pj, "gold")
-            pj.write_text(json.dumps(prior, indent=2), encoding="utf-8")
+            # Por el backend, como la tabla de al lado. Con `write_text` directo esto
+            # reventaba en Cloud Run --`/app/data/gold/` no existe adentro del
+            # contenedor-- y tiraba el paso `gold` entero DESPUES de haber escrito
+            # bien el parquet: el pipeline quedaba a mitad de camino.
+            backend().write_bytes(pj, json.dumps(prior, indent=2).encode("utf-8"))
             log.info("Prior de ascendidos congelado en %s", pj)
     return gold
 

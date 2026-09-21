@@ -16,6 +16,7 @@ import pandas as pd
 
 from common.config import CFG, PROJECT_ROOT
 from common.logging_setup import get_logger, setup
+from common.storage import backend
 from features import spec
 from training import betting, dataset, evaluate, models, registry
 from training.device import resolve
@@ -77,8 +78,9 @@ def correr_modelo(nombre: str, info, features: list[str], gold, guardar: bool,
             "seasons_entrenadas": CFG.seasons_a_entrenar(incluir_holdout),
         }
         prior = CFG.gold_root / "prior_ascendidos.json"
-        if prior.exists():
-            meta["promoted_prior"] = json.loads(prior.read_text(encoding="utf-8"))
+        if backend().exists(prior):
+            meta["promoted_prior"] = json.loads(
+                backend().read_bytes(prior).decode("utf-8"))
         ver = registry.guardar(nombre, res["modelos"], meta,
                                {"holdout": rep, "apuestas": roi})
         if not imp.empty:

@@ -178,3 +178,90 @@ def test_si_gold_esta_viejo_si_conviene_actualizar():
     g["gold_built_at"] = "20260101T000000Z"
 
     assert tareas.diagnostico(g)["hace_falta"] is True
+
+
+# ---------------------------------------------------------------------------
+# El estado de una corrida en la nube
+# ---------------------------------------------------------------------------
+
+class _Respuesta:
+    def __init__(self, cuerpo, status=200):
+        self._cuerpo, self.status_code, self.text = cuerpo, status, str(cuerpo)
+
+    def json(self):
+        return self._cuerpo
+
+
+@pytest.fixture
+def en_la_nube(monkeypatch):
+    """Una tarea lanzada contra un Job, con la Admin API sustituida."""
+    monkeypatch.setattr(tareas, "_token_metadata", lambda: "token")
+
+    t = tareas.Tarea(id="x", estado="corriendo", motivo="prueba",
+                     destino="cloud-run-job",
+                     referencia="projects/p/locations/us-central1/operations/op1")
+    tareas._TAREAS[t.id] = t
+
+    def responder(cuerpo, status=200):
+        import requests
+        monkeypatch.setattr(requests, "get",
+                            lambda *a, **k: _Respuesta(cuerpo, status))
+        t.consultada_at = 0.0          # se fuerza el refresco, sin esperar el TTL
+    return t, responder
+
+
+def test_una_corrida_que_fallo_deja_de_estar_en_curso(en_la_nube):
+    """El bug que dejó la página girando: nadie actualizaba el estado.
+
+    `_lanzar_job` dispara y vuelve —el pipeline tarda minutos y un request no dura
+    eso—, así que sin este refresco la tarea quedaba en `corriendo` para siempre. Y
+    como `en_curso()` la seguía viendo, el botón contestaba 409 y quedaba inutilizable
+    hasta reiniciar el servicio.
+    """
+    t, responder = en_la_nube
+    responder({"done": True, "response": {"succeededCount": 0, "failedCount": 1}})
+
+    assert tareas.consultar("x").estado == "error"
+    assert tareas.en_curso() is None, "una corrida muerta sigue bloqueando el botón"
+
+
+def test_una_corrida_que_salio_bien_queda_en_ok(en_la_nube):
+    t, responder = en_la_nube
+    responder({"done": True, "response": {"succeededCount": 1, "failedCount": 0}})
+    assert tareas.consultar("x").estado == "ok"
+
+
+def test_mientras_no_termina_sigue_corriendo(en_la_nube):
+    t, responder = en_la_nube
+    responder({"done": False})
+    assert tareas.consultar("x").estado == "corriendo"
+    assert tareas.en_curso() is not None
+
+
+def test_si_la_admin_api_no_contesta_la_tarea_no_se_rompe(en_la_nube):
+    """Una consulta que falla no puede matar la corrida: puede estar andando bien."""
+    t, _ = en_la_nube
+    import requests
+
+    def explotar(*a, **k):
+        raise requests.RequestException("sin red")
+
+    t.consultada_at = 0.0
+    original = requests.get
+    requests.get = explotar
+    try:
+        assert tareas.consultar("x").estado == "corriendo"
+    finally:
+        requests.get = original
+
+
+def test_a_los_35_minutos_se_suelta(en_la_nube):
+    """Si Cloud Run nunca contesta, igual hay que soltar: el Job muere a los 30."""
+    import time
+
+    t, _ = en_la_nube
+    t.lanzada_at = time.time() - tareas.MAX_EN_VUELO_S - 1
+    t.consultada_at = 0.0
+
+    assert tareas.consultar("x").estado == "error"
+    assert tareas.en_curso() is None
