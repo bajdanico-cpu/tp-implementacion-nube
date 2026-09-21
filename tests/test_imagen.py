@@ -6,11 +6,17 @@ lista, aunque `serving.predict`, `serving.observability` y `features.gold_tp` im
 `eda.baselines`. El contenedor moría antes de abrir el puerto y Cloud Run sólo decía
 *failed to start and listen on the port defined by PORT=8080*, que no nombra el módulo.
 
+Arreglar el `COPY` no alcanzó: `.gcloudignore` excluía `eda/` entero, así que el
+archivo ni llegaba al contexto y el build moría en *file not found in build context*.
+Son dos listas que tienen que estar de acuerdo —qué copia el `Dockerfile` y qué sube
+`gcloud`— y cada una falla en un momento distinto: la primera en runtime, la segunda en
+el build.
+
 Lo caro no fue el error sino el ciclo para verlo: `gcloud builds submit` (minutos),
 `gcloud run deploy`, esperar el timeout del health check, y recién ahí abrir los logs.
 Esto lo contesta en milisegundos, sin Docker y sin red: lee las líneas `COPY`, arma el
-conjunto de archivos que van a existir en `/app`, y verifica que todo import local que
-sale de ahí resuelva ahí adentro.
+conjunto de archivos que van a existir en `/app`, verifica que todo import local que
+sale de ahí resuelva ahí adentro, y que nada de eso esté excluido del contexto.
 
 No reemplaza construir la imagen —no ve dependencias de PyPI que falten en
 `requirements-serving.txt`, ni un import adentro de una función— pero cubre el caso que
@@ -21,6 +27,7 @@ from __future__ import annotations
 
 import ast
 import re
+from fnmatch import fnmatch
 from pathlib import Path
 
 import pytest
@@ -131,6 +138,55 @@ def test_el_arranque_del_servicio_esta_entero(dentro):
                     break
             else:
                 pytest.fail(f"{mod}, importado desde {rel}, no existe en el repo")
+
+
+def _excluido(rel: str, patrones: list[str]) -> str | None:
+    """El patrón de `.gcloudignore` que deja este archivo fuera del contexto, si hay uno.
+
+    Es una aproximación de la sintaxis gitignore, no una implementación: cubre patrones
+    de directorio (`eda/`), globs (`*.md`) y rutas literales, que es todo lo que el
+    archivo usa hoy. Si algún día usa negaciones o `**`, este test va a quedarse corto
+    —y el comentario está acá para que se note antes de confiar de más—.
+    """
+    partes = rel.split("/")
+    for pat in patrones:
+        if pat.startswith("!"):
+            continue
+        if pat.endswith("/"):
+            d = pat.rstrip("/")
+            # Sin barra interna, gitignore busca ese nombre de directorio en cualquier
+            # nivel; con barra, ancla en la raiz del contexto.
+            suelto = "/" not in d and d in partes[:-1]
+            anclado = "/" in d and rel.startswith(d + "/")
+            if suelto or anclado:
+                return pat
+        elif fnmatch(rel, pat) or fnmatch(partes[-1], pat):
+            return pat
+    return None
+
+
+def test_lo_que_el_dockerfile_copia_llega_al_contexto_de_build(dentro):
+    """La otra mitad del mismo error: el `COPY` estaba bien y el archivo no subía.
+
+    `gcloud builds submit` arma el contexto con `.gcloudignore` y, al existir ese
+    archivo, ignora `.gitignore` por completo. Un `COPY` de algo excluido no falla al
+    escribirlo: falla minutos después, en el build, con *file not found in build
+    context* — un mensaje que culpa al `Dockerfile` y no a la lista que lo causó.
+    """
+    ruta = RAIZ / ".gcloudignore"
+    if not ruta.exists():
+        pytest.skip("no hay .gcloudignore")
+
+    patrones = [l.strip() for l in ruta.read_text(encoding="utf-8").splitlines()
+                if l.strip() and not l.strip().startswith("#")]
+
+    fuera = {rel: pat for rel in sorted(dentro)
+             if (pat := _excluido(rel, patrones))}
+
+    assert not fuera, (
+        "el Dockerfile copia archivos que .gcloudignore deja fuera del contexto — "
+        "el build va a morir con 'file not found in build context':\n"
+        + "\n".join(f"  {r}  <- excluido por '{p}'" for r, p in fuera.items()))
 
 
 def test_no_se_copian_datos_ni_modelos():

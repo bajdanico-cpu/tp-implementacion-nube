@@ -38,5 +38,10 @@ gcp/
 infra/
 tests/
 scripts/
-eda/
 *.md
+
+# De `eda` entran los dos archivos que el Dockerfile copia, y nada mas. No se excluye
+# `eda/` con un `!` que los rescate: en sintaxis gitignore, un archivo cuyo directorio
+# padre esta excluido NO se puede re-incluir, asi que se excluye lo especifico.
+eda/run_eda.py
+eda/output/
