@@ -27,6 +27,16 @@ COPY transform ./transform
 COPY ingestion ./ingestion
 COPY training ./training
 COPY serving ./serving
+
+# De `eda` van SOLO estos dos: `baselines` tiene las constantes del dominio
+# (`CLASES_ORD`, `odds_a_probabilidades`) que usan `serving.predict`,
+# `serving.observability` y `features.gold_tp`, o sea el camino de arranque. Sin
+# esto el contenedor moria con ModuleNotFoundError antes de abrir el puerto, y
+# Cloud Run solo decia "failed to start and listen on PORT".
+#
+# `run_eda.py` queda afuera a proposito: importa matplotlib, que no esta en
+# requirements-serving.txt porque ningun request lo usa.
+COPY eda/__init__.py eda/baselines.py ./eda/
 COPY pipeline ./pipeline
 COPY web ./web
 COPY config.yaml .

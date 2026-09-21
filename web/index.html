@@ -245,8 +245,31 @@ async function disparar() {
   const b = $("#btn-act");
   if (b) { b.disabled = true; b.innerHTML = `<span class="spin"></span>lanzando`; }
 
-  const r = await fetch("/actualizar", { method: "POST" });
+  /* El token de administracion.
+
+     Disparar el pipeline gasta computo, y la pagina es publica porque de eso se trata
+     mostrarla. El servicio exige `X-Admin-Token` para el POST (nunca para las
+     consultas), asi que el token se pide una vez y queda en este navegador. No viaja a
+     ningun lado mas: es el mismo valor que `TP_ADMIN_TOKEN` en Cloud Run, y lo imprime
+     `scripts/preparar_demo.sh` al desplegar. */
+  let token = localStorage.getItem("tp_admin_token") || "";
+  if (!token) {
+    token = (prompt("Token de administración (lo imprime preparar_demo.sh):") || "").trim();
+    if (!token) { estadoDatos(); return; }
+    localStorage.setItem("tp_admin_token", token);
+  }
+
+  const r = await fetch("/actualizar", {
+    method: "POST",
+    headers: { "X-Admin-Token": token },
+  });
   const body = await r.json().catch(() => ({}));
+
+  if (r.status === 401 || r.status === 403) {
+    // Token equivocado: se olvida, asi el proximo intento vuelve a preguntar en vez de
+    // fallar para siempre contra un valor viejo guardado en el navegador.
+    localStorage.removeItem("tp_admin_token");
+  }
 
   if (!r.ok) {
     $("#datos").innerHTML =
