@@ -168,13 +168,25 @@ fi
 titulo "Qué hacer"
 if [ -n "${PROBLEMAS}" ]; then
   printf "  Falta resolver:%b\n\n" "${PROBLEMAS}"
-  echo "  Desde la máquina que tiene el dato al día:"
-  echo
-  echo "      gcloud storage rsync -r data/gold         gs://${BUCKET}/${PREFIJO}gold"
-  echo "      gcloud storage rsync -r data/predicciones gs://${BUCKET}/${PREFIJO}predicciones"
-  echo "      gcloud storage rsync -r models            gs://${BUCKET}/${PREFIJO}models"
-  echo
-  echo "  O, si no tenés gcloud local:  python -m scripts.bundle_demo"
+  if [ -d data/gold ] && [ -d models ]; then
+    echo "  El dato está en esta máquina. Subilo y desplegá:"
+    echo
+    echo "      BUCKET=${BUCKET} bash scripts/preparar_demo.sh"
+  else
+    echo "  El dato no está acá, y tampoco viene en el git clone: data/ y los .ubj están"
+    echo "  en .gitignore a propósito."
+    echo
+    echo "  En tu PC, donde sí lo tenés:"
+    echo
+    echo "      python -m scripts.bundle_demo        # deja demo-premier-ml.zip (5 MB)"
+    echo
+    echo "  Subilo con el menú de tres puntos de Cloud Shell -> Subir, y acá:"
+    echo
+    echo "      unzip -o ~/demo-premier-ml.zip"
+    echo "      BUCKET=${BUCKET} bash scripts/preparar_demo.sh"
+    echo
+    echo "  No hace falta gcloud en tu PC: el rsync lo corre Cloud Shell, que ya lo tiene."
+  fi
 else
   echo "  Está todo lo que el servicio necesita. Para desplegar:"
   echo
