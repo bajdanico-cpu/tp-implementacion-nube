@@ -34,7 +34,8 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from common.config import CFG
-from common.logging_setup import evento, get_logger
+from common.logging_setup import get_logger
+from serving import observability as obs
 from serving import predict, registro, tareas
 from serving.predict import FechaNoPreparada
 from serving.schemas import (CalendarioResponse, Diagnostico, FechaCalendario,
@@ -126,6 +127,11 @@ def health() -> HealthResponse:
 
     detalle = "; ".join(x for x in (ESTADO.error_modelo, ESTADO.error_gold) if x) or None
     ok = meta is not None and gold is not None
+    if not ok:
+        # Un /health que degrada y no deja rastro obliga a estar mirando justo en el
+        # momento en que degradó. Con el evento, se puede preguntar después.
+        obs.health_degradado(detalle)
+
     return HealthResponse(
         status="ok" if ok else "degraded",
         model_name=None if meta is None else meta["model_name"],
@@ -239,53 +245,55 @@ def _filas(pred: pd.DataFrame) -> list[MatchPrediction]:
 
 @app.get("/predict/{season}/{gameweek}", response_model=GameweekPredictionResponse)
 def predict_gameweek(season: str, gameweek: int) -> GameweekPredictionResponse:
-    inicio = time.perf_counter()
-    gold = _gold_o_503()
-
-    # `filas_gold` levanta FechaNoPreparada -> 409 con la próxima predecible.
-    d = predict.filas_gold(season, gameweek, gold=gold)
-    estado = _estado_de(d)
-
-    if estado == "proxima":
-        boosters, meta = ESTADO.modelo()
-        if meta is None:
-            raise HTTPException(status_code=503, detail=ESTADO.error_modelo)
+    # La latencia se mide con un context manager y no con dos `perf_counter()` sueltos,
+    # para que también quede registrada cuando el request falla. Los que fallan son
+    # justamente los que después hay que poder buscar en los logs.
+    with obs.medir_latencia() as marca:
         try:
-            pred = predict.predecir(season, gameweek, gold=gold,
-                                    modelo=(boosters, meta))
-        except AssertionError as exc:          # los dos controles de historia
+            gold = _gold_o_503()
+            # `filas_gold` levanta FechaNoPreparada -> 409 con la próxima predecible.
+            d = predict.filas_gold(season, gameweek, gold=gold)
+            estado = _estado_de(d)
+
+            if estado == "proxima":
+                boosters, meta = ESTADO.modelo()
+                if meta is None:
+                    raise HTTPException(status_code=503, detail=ESTADO.error_modelo)
+                pred = predict.predecir(season, gameweek, gold=gold,
+                                        modelo=(boosters, meta))
+                origen, pre_deadline = "en_vivo", None
+            else:
+                pred = registro.congelada(season, gameweek)
+                if pred is None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(f"{season} GW{gameweek} ya se jugó y no quedó ninguna "
+                                f"predicción registrada: no hay nada honesto que devolver."))
+                pred = registro.con_resultado(pred, d)
+                origen = "registro"
+                pre_deadline = bool(pred["registro_pre_deadline"].iloc[0])
+
+        except FechaNoPreparada as exc:
+            obs.prediccion_error(season, gameweek, 409, exc, marca.ms)
+            raise
+        except HTTPException as exc:
+            obs.prediccion_error(season, gameweek, exc.status_code, exc,
+                                 marca.ms)
+            raise
+        except (AssertionError, ValueError) as exc:
+            # AssertionError: los dos controles de historia. ValueError: el contrato de
+            # features roto. Las dos son 500, y las dos tienen que quedar en el log.
+            obs.prediccion_error(season, gameweek, 500, exc, marca.ms)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
-        except ValueError as exc:              # contrato de features roto
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        origen, pre_deadline = "en_vivo", None
-    else:
-        pred = registro.congelada(season, gameweek)
-        if pred is None:
-            raise HTTPException(
-                status_code=409,
-                detail=(f"{season} GW{gameweek} ya se jugó y no quedó ninguna predicción "
-                        f"registrada: no hay nada honesto que devolver."))
-        pred = registro.con_resultado(pred, d)
-        origen = "registro"
-        pre_deadline = bool(pred["registro_pre_deadline"].iloc[0])
 
     filas = _filas(pred)
     con_resultado = pred["target_1x2"].notna() if "target_1x2" in pred else pd.Series(dtype=bool)
     n_res = int(con_resultado.sum())
     acc = float(pred.loc[con_resultado, "acierto"].mean()) if n_res else None
 
-    # Un evento por request, consultable por campo en Cloud Logging. Se guarda la
-    # decisión y la métrica: qué fecha, en qué estado, con qué modelo y cuánto tardó.
-    # Nada sobre quién consultó — acá es trivial porque son equipos de fútbol, pero la
-    # regla vale igual y conviene que esté escrita donde se decide.
-    latencia = round((time.perf_counter() - inicio) * 1000, 2)
-    evento(log, "prediccion",
-           f"{season} GW{gameweek} [{estado}/{origen}] {len(filas)} partidos, {latencia} ms",
-           season=season, gameweek=gameweek, estado=estado, origen=origen,
-           n_partidos=len(filas), latencia_ms=latencia,
-           model_version=pred["model_version"].iloc[0],
-           feature_set_version=pred["feature_set_version"].iloc[0],
-           accuracy=acc, n_con_resultado=n_res)
+    # Qué campos lleva cada evento vive en `serving/observability.py`.
+    obs.prediccion(season, gameweek, estado, origen, pred, marca.ms,
+                   accuracy=acc, n_con_resultado=n_res)
 
     return GameweekPredictionResponse(
         season=season, gameweek=gameweek, count=len(filas),

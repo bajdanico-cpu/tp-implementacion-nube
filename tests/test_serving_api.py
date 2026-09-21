@@ -417,3 +417,116 @@ def test_solo_se_marca_reconstruccion_la_fecha_sin_prediccion_previa(cliente):
     assert len(reconstruidas) < len(jugadas), (
         f"todas las fechas jugadas ({jugadas}) salieron como reconstrucción: "
         f"o se rompió `registro.congelada`, o falta el registro pre-deadline")
+
+
+# ---------------------------------------------------------------------------
+# Los eventos que deja cada request
+#
+# Vienen de la rama `feature/logging-estructurado`, adaptados al logging del proyecto.
+# El que más vale es el último: la regla de qué NO va al log es fácil de romper sin
+# darse cuenta, el día que alguien agrega un campo "para debuggear".
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def eventos():
+    """Captura los eventos estructurados que emite la API, ya parseados."""
+    import logging
+
+    from serving import observability as obs
+
+    capturados: list[dict] = []
+
+    class Espia(logging.Handler):
+        def emit(self, record):
+            if hasattr(record, "evento"):
+                campos = {k: v for k, v in record.__dict__.items()
+                          if k not in logging.LogRecord("", 0, "", 0, "", (), None).__dict__}
+                capturados.append({"evento": record.evento,
+                                   "nivel": record.levelname, **campos})
+
+    h = Espia()
+    obs.log.addHandler(h)
+    yield lambda nombre=None: [e for e in capturados
+                               if nombre is None or e["evento"] == nombre]
+    obs.log.removeHandler(h)
+
+
+def test_el_cronometro_mide_aunque_el_bloque_falle():
+    """Con dos `perf_counter()` sueltos, una excepción se lleva puesta la medición."""
+    import time as _t
+
+    from serving import observability as obs
+
+    with pytest.raises(RuntimeError):
+        with obs.medir_latencia() as marca:
+            _t.sleep(0.01)
+            raise RuntimeError("falla")
+    assert marca.ms >= 5
+
+
+def test_el_cronometro_se_puede_leer_desde_adentro_del_except():
+    """El caso que importa: el `finally` del context manager todavía no corrió."""
+    from serving import observability as obs
+
+    import time as _t
+    with obs.medir_latencia() as marca:
+        try:
+            _t.sleep(0.01)
+            raise ValueError("x")
+        except ValueError:
+            adentro = marca.ms
+    assert adentro >= 5
+
+
+def test_una_prediccion_deja_su_evento(cliente, eventos):
+    gw = _proxima_o_skip()
+    r = cliente.get(f"/predict/{SEASON}/{gw}")
+    assert r.status_code == 200
+
+    (ev,) = eventos("prediccion")
+    assert ev["gameweek"] == gw
+    assert ev["n_partidos"] == r.json()["count"]
+    assert ev["latencia_ms"] > 0
+    assert sum(ev["anunciadas"].values()) == ev["n_partidos"]
+    for campo in ("model_version", "feature_set_version", "confianza_media", "estado"):
+        assert campo in ev
+
+
+def test_el_log_no_filtra_datos_por_partido(cliente, eventos):
+    """Sólo agregados. Es barato cumplirlo acá y caro aprenderlo con datos reales.
+
+    El evento tiene que servir para saber cómo viene el servicio, no para reconstruir lo
+    que devolvió. Si mañana el caso tuviera PII, la costumbre ya está tomada.
+    """
+    cliente.get(f"/predict/{SEASON}/{_proxima_o_skip()}")
+    (ev,) = eventos("prediccion")
+
+    for prohibido in ("p_home", "p_draw", "p_away", "predictions", "fixture_id",
+                      "home_short", "away_short", "kickoff_time"):
+        assert prohibido not in ev
+
+
+def test_una_fecha_no_preparada_deja_evento_de_error(cliente, eventos):
+    """Loguear sólo los éxitos es tener observabilidad que falta cuando hace falta."""
+    gw = _proxima_o_skip() + 5
+    assert cliente.get(f"/predict/{SEASON}/{gw}").status_code == 409
+
+    (ev,) = eventos("prediccion_error")
+    assert ev["status"] == 409
+    assert ev["gameweek"] == gw
+    assert ev["error_type"] == "FechaNoPreparada"
+    assert ev["latencia_ms"] > 0
+    # 4xx es de quien pidió, 5xx es nuestro: la severidad los separa en la consola.
+    assert ev["nivel"] == "WARNING"
+
+
+def test_health_degradado_deja_evento(cliente, eventos, monkeypatch):
+    def sin_gold():
+        raise FileNotFoundError("no existe gold.gold_tp_match")
+
+    monkeypatch.setattr(predict, "cargar_gold", sin_gold)
+    main.ESTADO.gold, main.ESTADO.gold_at = None, 0.0
+
+    assert cliente.get("/health").json()["status"] == "degraded"
+    (ev,) = eventos("health_degradado")
+    assert ev["nivel"] == "ERROR" and "gold" in ev["reason"].lower()

@@ -99,6 +99,53 @@ python scripts/smoke_load.py --url http://127.0.0.1:8080     # contra la API loc
 > congelado y no toca el modelo; la **próxima** sí lo corre. Son dos latencias distintas y
 > mezclarlas en un mismo percentil no dice nada.
 
+## Leer los logs por campo
+
+En Cloud Run el servicio emite una línea de JSON por evento, así que Cloud Logging los
+deja consultar por campo en vez de por texto.
+
+Generar un error a propósito, para tener qué mirar:
+
+```bash
+curl -s "${SERVICE_URL}/predict/2026-27/9999"     # 404: la fecha no existe
+curl -s "${SERVICE_URL}/predict/2026-27/20"       # 409: todavía no está preparada
+```
+
+Las predicciones servidas:
+
+```bash
+gcloud logging read 'jsonPayload.evento="prediccion"' --limit 6 \
+  --format="table(jsonPayload.gameweek, jsonPayload.estado, jsonPayload.origen,
+                  jsonPayload.latencia_ms, jsonPayload.confianza_media)"
+```
+
+Los errores, que son los que importan:
+
+```bash
+gcloud logging read 'jsonPayload.evento="prediccion_error"' --limit 5 \
+  --format="table(jsonPayload.gameweek, jsonPayload.status, jsonPayload.error_type,
+                  jsonPayload.reason)"
+```
+
+Quién pidió actualizar el dato:
+
+```bash
+gcloud logging read 'jsonPayload.evento="pipeline_disparo"' --limit 5 \
+  --format="table(jsonPayload.tarea, jsonPayload.estado, jsonPayload.destino)"
+```
+
+Un evento entero, en crudo:
+
+```bash
+gcloud logging read 'jsonPayload.evento="prediccion"' --limit 1 --format=json
+```
+
+> **Qué NO va al log.** Sólo agregados: cuántos partidos, cuántos de cada clase, la
+> confianza media, la latencia. Ni las probabilidades por partido ni las features. Hay un
+> test que lo verifica (`test_el_log_no_filtra_datos_por_partido`), porque la regla es
+> fácil de romper sin darse cuenta el día que alguien agrega un campo "para debuggear".
+
+
 ## API necesaria
 
 Las APIs se habilitan **por proyecto**: un proyecto nuevo nace con casi todo apagado.

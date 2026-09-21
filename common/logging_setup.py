@@ -110,12 +110,16 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
-def evento(log: logging.Logger, nombre: str, mensaje: str, **campos) -> None:
+def evento(log: logging.Logger, nombre: str, mensaje: str,
+           nivel: int = logging.INFO, **campos) -> None:
     """Loguea un evento consultable por campo.
 
         evento(log, "prediccion", "GW5 servida", gameweek=5, latencia_ms=47.1)
 
     En local sale como texto legible; en Cloud Run, como `jsonPayload` con `evento`,
     `gameweek` y `latencia_ms` como campos propios.
+
+    `nivel` importa más de lo que parece: Cloud Logging lo traduce a `severity`, y es lo
+    que permite filtrar los errores en la consola sin escribir una consulta.
     """
-    log.info(mensaje, extra={"evento": nombre, **campos})
+    log.log(nivel, mensaje, extra={"evento": nombre, **campos})
