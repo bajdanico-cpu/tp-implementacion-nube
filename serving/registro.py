@@ -35,11 +35,19 @@ import pandas as pd
 
 from common.config import CFG, utc_stamp
 from common.logging_setup import get_logger
+from common.storage import backend
 
 log = get_logger(__name__)
 
 # Cuelga de `CFG.data_root` y no de `PROJECT_ROOT`: con backend GCS o con `TP_DATA_ROOT`
 # apuntando a otro lado, el registro tiene que viajar con el resto del dato.
+#
+# Y TODO el I/O de este modulo pasa por `backend()`, igual que Silver y Gold. Esta
+# ruta no es un archivo: es una clave. Con `pathlib` directo el modulo funcionaba en
+# local y en Cloud Run devolvia el registro vacio -- `PREDICCIONES.exists()` da False
+# adentro del contenedor, donde no hay `data/` -- asi que toda fecha jugada contestaba
+# "ya se jugo y no quedo ninguna prediccion". El servicio arrancaba igual y /health
+# decia ok, porque Gold si venia del bucket: fallaba solo la mitad que nadie mira.
 PREDICCIONES = CFG.data_root / "predicciones"
 
 # El sufijo `_N` opcional desempata dos registros del MISMO segundo. `utc_stamp()` tiene
@@ -54,11 +62,8 @@ PROBS = ["p_home", "p_draw", "p_away"]
 
 def listar(season: str | None = None, gameweek: int | None = None) -> pd.DataFrame:
     """Una fila por parquet registrado: season, gameweek, stamp, ruta."""
-    if not PREDICCIONES.exists():
-        return pd.DataFrame(columns=["season", "gameweek", "stamp", "ruta"])
-
     filas = []
-    for p in sorted(PREDICCIONES.glob("*.parquet")):
+    for p in backend().list_files(PREDICCIONES, "*.parquet"):
         m = NOMBRE.match(p.name)
         if not m:
             log.warning("Archivo con nombre inesperado en el registro: %s", p.name)
@@ -101,7 +106,7 @@ def congelada(season: str, gameweek: int) -> pd.DataFrame | None:
 
     candidatas = []
     for ruta in archivos["ruta"]:
-        d = pd.read_parquet(ruta)
+        d = backend().read_dataframe(ruta)
         if d.empty:
             continue
         emitida = pd.Timestamp(d["predicted_at"].iloc[0])
@@ -168,22 +173,21 @@ def guardar(pred: pd.DataFrame, si_existe: str = "saltar") -> Path | None:
     if si_existe == "saltar":
         previas = listar(s, gw)
         if not previas.empty:
-            ultima = pd.read_parquet(previas["ruta"].iloc[-1])
+            ultima = backend().read_dataframe(previas["ruta"].iloc[-1])
             if _es_repetida(pred, ultima):
                 log.info("La predicción de %s GW%d es idéntica a la registrada en %s: "
                          "no se escribe de nuevo.", s, gw, previas["stamp"].iloc[-1])
                 return None
 
-    PREDICCIONES.mkdir(parents=True, exist_ok=True)
     base = f"{s}_GW{gw:02d}_{utc_stamp()}"
     ruta = PREDICCIONES / f"{base}.parquet"
     # Append-only de verdad: si ya existe ese nombre (dos registros dentro del mismo
     # segundo) se desempata con un sufijo en vez de sobrescribir.
     i = 0
-    while ruta.exists():
+    while backend().exists(ruta):
         i += 1
         ruta = PREDICCIONES / f"{base}_{i}.parquet"
-    pred.to_parquet(ruta, index=False)
+    backend().write_dataframe(pred, ruta)
     log.info("Predicción registrada en %s", ruta)
     return ruta
 

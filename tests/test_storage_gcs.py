@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 
 from common import storage
+from serving import registro
 from common.config import CFG, load
 from common.storage import GCSBackend, StorageBackend
 
@@ -165,6 +166,66 @@ def falso():
     storage.set_backend(b)
     yield b
     storage.reset_backend()
+
+
+def _prediccion(season="2099-00", gw=1, model_version="v1"):
+    return pd.DataFrame({
+        "season": [season] * 2, "gameweek": [gw] * 2, "fixture_id": [1, 2],
+        "kickoff_time": pd.to_datetime(["2099-08-10T12:00Z", "2099-08-10T14:00Z"]),
+        "home_short": ["AAA", "CCC"], "away_short": ["BBB", "DDD"],
+        "p_home": [0.5, 0.2], "p_draw": [0.3, 0.3], "p_away": [0.2, 0.5],
+        "prediccion": ["home", "away"], "confianza": [0.5, 0.5],
+        "predicted_at": ["2099-08-09T00:00:00+00:00"] * 2,
+        "model_name": ["m"] * 2, "model_version": [model_version] * 2,
+        "feature_set_version": ["f1"] * 2,
+    })
+
+
+def test_el_registro_de_predicciones_vive_en_el_backend_y_no_en_el_disco(
+        falso, monkeypatch, tmp_path):
+    """El bug que rompio el deploy: `registro` hacia I/O con `pathlib` directo.
+
+    `listar` preguntaba `PREDICCIONES.exists()` y globeaba la carpeta; `congelada` hacia
+    `pd.read_parquet`. En la PC eso funciona y en Cloud Run devuelve vacio, porque
+    adentro del contenedor no hay `data/`: toda fecha jugada contestaba *ya se jugo y no
+    quedo ninguna prediccion*. No lo vio ningun test porque todos corren con el backend
+    local, donde `pathlib` y el backend son lo mismo.
+
+    Por eso la ruta apunta a un lugar que NO existe en el disco: con el codigo viejo
+    esto da vacio, con el nuevo lo encuentra en el backend.
+    """
+    carpeta = tmp_path / "no-existe" / "predicciones"
+    monkeypatch.setattr(registro, "PREDICCIONES", carpeta)
+    assert not carpeta.exists(), "la ruta tiene que no existir para que el test valga"
+
+    falso.write_dataframe(_prediccion(), carpeta / "2099-00_GW01_20990809T000000Z.parquet")
+
+    d = registro.listar("2099-00")
+    assert len(d) == 1, "el registro no salio del backend"
+    assert int(d["gameweek"].iloc[0]) == 1
+
+    cong = registro.congelada("2099-00", 1)
+    assert cong is not None, "una fecha con prediccion registrada contesto que no hay"
+    assert bool(cong["registro_pre_deadline"].iloc[0]) is True
+
+
+def test_guardar_escribe_en_el_backend(falso, monkeypatch, tmp_path):
+    """La otra mitad: el Job registra la prediccion de la fecha nueva.
+
+    Con `to_parquet` directo la escribia adentro del contenedor del Job, que se apaga
+    cuando termina. La prediccion quedaba emitida y sin registrar, que es exactamente
+    lo que el registro existe para evitar.
+    """
+    carpeta = tmp_path / "no-existe" / "predicciones"
+    monkeypatch.setattr(registro, "PREDICCIONES", carpeta)
+
+    ruta = registro.guardar(_prediccion(gw=2))
+    assert ruta is not None
+    assert falso.exists(ruta), "no quedo en el backend"
+    assert not ruta.exists(), "se escribio en el disco"
+
+    # Y el dedup tambien tiene que leer del backend, o volveria a escribir siempre.
+    assert registro.guardar(_prediccion(gw=2)) is None
 
 
 def test_el_pipeline_lee_y_escribe_contra_un_backend_falso(falso):
