@@ -9,8 +9,8 @@ consultable por campo:
     gcloud logging read 'jsonPayload.evento="prediccion" AND jsonPayload.latencia_ms>100'
 
 Sin eso, un log es una tira de texto: sirve para leer de a uno y no para preguntarle nada.
-El formato se elige solo —si hay `K_SERVICE`, la variable que Cloud Run siempre define,
-va JSON— y se puede forzar con `TP_LOG_FORMAT=json|texto`.
+El formato se elige solo —si el proceso corre en Cloud Run va JSON— y se puede forzar
+con `TP_LOG_FORMAT=json|texto`.
 
 **Qué se loguea y qué no.** La decisión y la métrica; nunca datos de quien consulta. Acá el
 dominio lo hace fácil (son equipos de fútbol, no clientes), y justamente por eso conviene
@@ -63,12 +63,24 @@ class FormatoJSON(logging.Formatter):
         return json.dumps(salida, default=str, ensure_ascii=False)
 
 
+# Cloud Run define variables DISTINTAS segun que corra: `K_SERVICE` en un Service,
+# `CLOUD_RUN_JOB` en un Job. Mirar solo la primera dejaba al pipeline logueando en
+# texto plano -- o sea sin `jsonPayload`, sin poder filtrar por paso ni por fecha--,
+# y es justo la corrida sobre la que uno quiere preguntar cuando algo sale mal.
+EN_CLOUD_RUN = ("K_SERVICE", "CLOUD_RUN_JOB")
+
+
+def en_cloud_run() -> bool:
+    """¿Este proceso corre en Cloud Run, sea Service o Job?"""
+    return any(os.getenv(v) for v in EN_CLOUD_RUN)
+
+
 def formato_elegido() -> str:
     """`json` o `texto`. En Cloud Run, JSON; en tu terminal, texto."""
     pedido = (os.getenv("TP_LOG_FORMAT") or "").strip().lower()
     if pedido in ("json", "texto"):
         return pedido
-    return "json" if os.getenv("K_SERVICE") else "texto"
+    return "json" if en_cloud_run() else "texto"
 
 
 def setup(level: str | None = None, fmt: str | None = None) -> None:

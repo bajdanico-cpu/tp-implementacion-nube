@@ -530,3 +530,39 @@ def test_health_degradado_deja_evento(cliente, eventos, monkeypatch):
     assert cliente.get("/health").json()["status"] == "degraded"
     (ev,) = eventos("health_degradado")
     assert ev["nivel"] == "ERROR" and "gold" in ev["reason"].lower()
+
+
+# ---------------------------------------------------------------------------
+# El formato del log según dónde corra
+# ---------------------------------------------------------------------------
+
+def test_el_job_del_pipeline_tambien_loguea_json(monkeypatch):
+    """Cloud Run define una variable distinta para un Job que para un Service.
+
+    Mirar sólo `K_SERVICE` dejaba al pipeline logueando texto plano: sus corridas
+    llegaban a Cloud Logging como `textPayload` y no se podían filtrar por paso ni por
+    fecha. Es justo la corrida sobre la que uno quiere preguntar cuando algo falla, y es
+    la mitad de la evidencia de operación que el TP entrega.
+    """
+    from common import logging_setup as ls
+
+    for v in ("K_SERVICE", "CLOUD_RUN_JOB", "TP_LOG_FORMAT"):
+        monkeypatch.delenv(v, raising=False)
+    assert ls.formato_elegido() == "texto"          # tu terminal
+
+    monkeypatch.setenv("CLOUD_RUN_JOB", "premier-ml-pipeline")
+    assert ls.formato_elegido() == "json"
+    assert ls.en_cloud_run() is True
+
+    monkeypatch.delenv("CLOUD_RUN_JOB")
+    monkeypatch.setenv("K_SERVICE", "premier-ml-api")
+    assert ls.formato_elegido() == "json"
+
+
+def test_la_variable_de_formato_le_gana_al_entorno(monkeypatch):
+    """`TP_LOG_FORMAT` existe para poder leer los logs del contenedor a ojo."""
+    from common import logging_setup as ls
+
+    monkeypatch.setenv("K_SERVICE", "premier-ml-api")
+    monkeypatch.setenv("TP_LOG_FORMAT", "texto")
+    assert ls.formato_elegido() == "texto"
