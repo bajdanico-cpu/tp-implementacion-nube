@@ -9,9 +9,20 @@ difieren hasta en la clase anunciada (BOU-EVE pasó de `away` a `home`).
 Por eso este módulo existe aparte de `predict.py`: el registro no es un detalle de
 implementación de la predicción, es la mitad del experimento.
 
-**Append-only, como Bronze.** Nada se pisa. Pero tampoco se acumula basura: `guardar`
-deduplica, porque antes cada re-corrida del pipeline dejaba un archivo nuevo idéntico al
-anterior y la GW2 llegó a tener siete.
+**Append-only, como Bronze.** Nada se pisa: `guardar` nunca sobreescribe, y el sufijo
+`_N` desempata dos registros del mismo segundo.
+
+**Pero append-only no es acumular cualquier cosa.** Una predicción vale como evidencia
+si la emitió el modelo que está en producción y llegó antes del corte; lo demás es otra
+cosa. El registro juntó 18 parquets para cinco fechas: seis versiones distintas de una
+tarde de reentrenos —modelos que ya no existen en `models/`, o sea predicciones que
+nadie puede auditar— y re-corridas posteriores al partido, que son reconstrucciones.
+Dos herramientas, para los dos momentos:
+
+  * `guardar(si_existe="saltar")` evita que vuelva a crecer: si la predicción es
+    idéntica a la última de esa fecha, no escribe.
+  * `scripts.depurar_registro` limpia lo que ya se acumuló, dejando por fecha la que
+    gobierna. No borra: mueve a `data/_registro_desarrollo/`.
 """
 
 from __future__ import annotations

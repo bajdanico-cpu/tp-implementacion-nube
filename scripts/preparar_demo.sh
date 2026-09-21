@@ -140,10 +140,14 @@ if [ "${SUBIR_DATO}" = "si" ]; then
 
   # shellcheck disable=SC2086
   gcloud storage rsync -r data/gold         "gs://${BUCKET}/gold"         ${BORRAR} --quiet
-  # shellcheck disable=SC2086
-  gcloud storage rsync -r data/predicciones "gs://${BUCKET}/predicciones" ${BORRAR} --quiet
+  # `predicciones/` se sincroniza SIEMPRE con borrado, y no solo en reset. El registro
+  # esta curado: una prediccion por fecha, todas del modelo de produccion. Un archivo
+  # viejo que sobreviva arriba no es inofensivo -- `registro.congelada`, cuando una fecha
+  # no tiene ninguna prediccion anterior al corte, devuelve la MAS TEMPRANA, asi que una
+  # sobra de desarrollo de agosto se convertiria en lo que la API sirve para la GW1.
+  gcloud storage rsync -r data/predicciones "gs://${BUCKET}/predicciones"     --delete-unmatched-destination-objects --quiet
   gcloud storage rsync -r models            "gs://${BUCKET}/models"       --quiet
-  ok "gold, predicciones y models subidos${BORRAR:+ (con borrado de lo que sobraba)}"
+  ok "gold, predicciones ($(ls data/predicciones/*.parquet | wc -l)) y models subidos"
 
   # Silver y Bronze los necesita el JOB para no re-descargar cinco temporadas enteras.
   # Sin Bronze, la primera corrida baja todo de nuevo: son minutos de más, justo en vivo.
