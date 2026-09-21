@@ -3,6 +3,7 @@
 #
 #   bash scripts/preparar_demo.sh              # provisiona todo y deja el estado inicial
 #   bash scripts/preparar_demo.sh --reset      # SOLO vuelve el dato al estado inicial
+#   SALTAR_BUILD=1 bash scripts/preparar_demo.sh   # retomar sin reconstruir la imagen
 #
 # Es idempotente: se puede correr dos veces sin romper nada. Cada paso dice qué hace y
 # sigue de largo si el recurso ya existe.
@@ -199,18 +200,29 @@ gcloud artifacts repositories describe "${REPO}" --location="${REGION}" >/dev/nu
        --repository-format=docker --location="${REGION}" --quiet
 ok "Artifact Registry ${REPO}"
 
-gcloud builds submit --tag "${IMAGE}" . --quiet
-ok "imagen publicada"
+# Es el paso lento (minutos). `SALTAR_BUILD=1` sirve para retomar cuando algo fallo
+# despues de este punto y la imagen ya esta publicada: el resto es idempotente.
+if [ "${SALTAR_BUILD:-}" = "1" ]; then
+  gcloud artifacts docker images describe "${IMAGE}" >/dev/null 2>&1 \
+    || morir "SALTAR_BUILD=1 pero ${IMAGE} no existe. Corré sin esa variable."
+  aviso "build salteado: se reusa la imagen que ya está publicada"
+else
+  gcloud builds submit --tag "${IMAGE}" . --quiet
+  ok "imagen publicada"
+fi
 
 # ---------------------------------------------------------------- 6 · el Job
 titulo "6 · Cloud Run Job (el pipeline)"
+
+# `--args=` pegado con el signo igual, y no separado por espacio: el valor arranca
+# con "-" y gcloud lo tomaba como otra flag ("--args: expected one argument").
 gcloud run jobs deploy "${JOB}" \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --service-account "${SA_JOB}" \
   --set-env-vars "TP_STORAGE_BACKEND=gcs,TP_GCS_BUCKET=${BUCKET}" \
   --memory 2Gi --cpu 2 --task-timeout 30m --max-retries 1 \
-  --command python --args "-m,pipeline.pre_deadline" \
+  --command python --args=-m,pipeline.pre_deadline \
   --quiet
 ok "${JOB} desplegado (NO se ejecuta: eso es la demo)"
 
