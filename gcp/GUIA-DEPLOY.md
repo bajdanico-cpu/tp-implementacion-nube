@@ -191,11 +191,30 @@ algo justamente porque no la vio.
 
 ### Subir
 
-> **¿Ya tenés un bucket con cosas adentro?** Reusalo: exportá `BUCKET` con su nombre
-> antes de correr nada y todo lo demás se acomoda. `rsync` **suma y actualiza**, no borra
-> lo que ya estaba, así que convivir con otros archivos no es problema. Lo único que el
-> código espera son los prefijos `gold/`, `predicciones/` y `models/`; si el bucket usa
-> otra estructura, `TP_GCS_PREFIX` mete todo bajo una carpeta y listo.
+> ### ¿Ya tenés cosas en el bucket? No borres nada
+>
+> **Reusalo.** Es la respuesta en casi todos los casos, y no por comodidad: Bronze es
+> **append-only por diseño** —cada corrida escribe en su propia carpeta
+> `ingested_at=<stamp>`— así que los snapshots viejos y los nuevos conviven. `rsync`
+> **suma y actualiza, no pisa**.
+>
+> Y lo parcial sirve más de lo que parece. La política de caché no vuelve a bajar una
+> **temporada cerrada** que ya tenga snapshot, así que un Bronze que llegue sólo hasta la
+> fecha 2 igual te ahorra las cuatro temporadas históricas, que son el grueso de los
+> 300 MB. Lo único que se re-descarga siempre es la temporada en curso, que es chica.
+>
+> Antes de tocar nada, mirá qué hay:
+>
+> ```bash
+> bash scripts/verificar_bucket.sh
+> ```
+>
+> Te dice qué prefijos están, cuántos archivos y cuánto pesan, si el modelo de producción
+> tiene sus `.ubj` arriba (sin eso el servicio da 503), hasta qué fecha llega Bronze, y
+> qué comando te falta correr. No modifica nada.
+>
+> Lo único que el código espera son los prefijos `gold/`, `predicciones/` y `models/`. Si
+> el bucket ya usa otra estructura, `TP_GCS_PREFIX` mete todo bajo una carpeta y listo.
 
 ```bash
 gcloud storage buckets create "gs://${BUCKET}" --location="${REGION}" || true
