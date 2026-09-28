@@ -1,26 +1,27 @@
-"""Genera carga contra la API y mide latencia.
+"""Genera carga contra la API y mide latencia DESDE EL CLIENTE.
 
 Dispara N requests `GET` a `/predict/{season}/{gameweek}` y reporta la distribución de
-latencia (p50/p95/p99) y los errores. Sirve para dos cosas:
+latencia (p50/p95/p99) y los errores. Es la mitad de la medición: la otra mitad la da el
+servidor, en sus logs, y la junta `scripts/logs_servidor.py --corrida <id>`.
 
-  1. **Ver latencia de verdad**, no un número teórico: el primer request paga el arranque en
-     frío de Cloud Run (cold start) y los siguientes salen tibios.
+  1. **Latencia vista por quien consulta.** Incluye todo: red, TLS, el borde de Cloud Run,
+     el arranque en frío si la instancia estaba apagada, y la app. El `max` suele ser el
+     cold start.
+  2. **Tráfico marcado.** Cada corrida manda `X-Corrida: <id>` en todos sus requests. El
+     servicio lo copia en cada línea de log (`jsonPayload.corrida`), así que después se
+     pueden pedir al servidor exactamente los eventos de ESTA corrida y comparar.
 
-     Desde que el servicio sirve desde Gold, los requests tibios dan **decenas de
-     milisegundos** (p50 ~47 ms medido en local). Antes tardaban ~25 segundos porque cada
-     uno reconstruía las 279 features desde Silver y recargaba los cinco boosters; hoy la
-     fila ya está calculada y el modelo queda cacheado en el proceso. El `max` sigue siendo
-     el cold start, que ahora incluye bajar Gold y los modelos del bucket.
-  2. **Producir tráfico** para después leerlo en los logs (`gcloud run services logs read`).
-
-Solo librería estándar: se corre en Cloud Shell sin instalar nada. No hay payload: la API
+Sólo librería estándar: se corre en Cloud Shell sin instalar nada. No hay payload: la API
 arma las features sola a partir de la temporada y la fecha de la ruta.
 
-La URL base se resuelve en este orden: `--url`, la variable de entorno SERVICE_URL, y por
-último la URL fija DEFAULT_URL.
+**La URL no tiene default fijo, a propósito.** Hasta septiembre de 2026 caía en silencio en
+una URL escrita en el script, que era el servicio de OTRO proyecto: el smoke "andaba" y
+después en Cloud Logging del proyecto propio no había nada. Ahora se resuelve así:
+`--url`, la variable `SERVICE_URL`, y si no hay ninguna, se le pregunta a `gcloud` por el
+servicio `premier-ml-api` del proyecto activo. Si nada de eso resuelve, corta con error.
 
 Uso:
-    python scripts/smoke_load.py                                  # 10 requests a SERVICE_URL (o la URL por defecto)
+    python scripts/smoke_load.py                                  # 10 requests a la próxima fecha
     python scripts/smoke_load.py --n 30 --concurrency 4
     python scripts/smoke_load.py --endpoint /predict/2026-27/5
     python scripts/smoke_load.py --url http://127.0.0.1:8080      # contra la API local
@@ -28,18 +29,22 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import shutil
 import statistics
+import subprocess
 import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from pathlib import Path
 
-DEFAULT_URL = "https://premier-ml-api-tz75rnogkq-uc.a.run.app"
-# La fecha 4 ya se jugó, así que la respuesta sale del registro congelado: es el camino
-# más liviano. Para medir el camino que corre el modelo, apuntar a la próxima predecible
-# (`--endpoint /predict/2026-27/5`), que es el que importa para el cold start.
-DEFAULT_ENDPOINT = "/predict/2026-27/4"
+SERVICE = os.environ.get("SERVICE", "premier-ml-api")
+REGION = os.environ.get("REGION", "us-central1")
+# Donde queda el detalle de cada corrida, para que `logs_servidor.py` lo lea.
+SALIDA = Path(__file__).resolve().parents[1] / "monitoring" / "output" / "smoke"
 
 
 def percentile(values: list[float], pct: float) -> float:
@@ -55,9 +60,57 @@ def percentile(values: list[float], pct: float) -> float:
     return ordered[low] + (ordered[high] - ordered[low]) * (rank - low)
 
 
-def one_request(url: str, timeout: float) -> tuple[float, int]:
+def url_de_gcloud(service: str = SERVICE, region: str = REGION) -> str | None:
+    """La URL del servicio en el proyecto activo de gcloud, o None si no se puede saber."""
+    gcloud = shutil.which("gcloud")
+    if not gcloud:
+        return None
+    try:
+        r = subprocess.run([gcloud, "run", "services", "describe", service,
+                            "--region", region, "--format=value(status.url)"],
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    url = r.stdout.strip()
+    return url if r.returncode == 0 and url.startswith("http") else None
+
+
+def resolver_url(arg: str | None, env=None, desde_gcloud=url_de_gcloud) -> tuple[str, str]:
+    """(url, de dónde salió). Corta con SystemExit si no hay forma de saberla."""
+    env = os.environ if env is None else env
+    if arg:
+        return arg, "--url"
+    if env.get("SERVICE_URL"):
+        return env["SERVICE_URL"], "SERVICE_URL"
+    url = desde_gcloud()
+    if url:
+        return url, f"gcloud run services describe {SERVICE}"
+    raise SystemExit(
+        "No sé contra qué servicio correr. Pasá --url, o exportá SERVICE_URL:\n"
+        f"  export SERVICE_URL=\"$(gcloud run services describe {SERVICE} "
+        f"--region {REGION} --format='value(status.url)')\"")
+
+
+def proxima_fecha(base: str, timeout: float) -> str | None:
+    """`/predict/<temporada>/<próxima>` según el /health del servicio.
+
+    La próxima es la que corre el modelo; una jugada sale del registro congelado y no lo
+    toca. Si el default fuera una fecha fija, en un mes estaría midiendo el camino liviano.
+    """
+    try:
+        with urllib.request.urlopen(base + "/health", timeout=timeout) as r:
+            h = json.load(r)
+        if h.get("proxima_predecible"):
+            return f"/predict/{h['season_actual']}/{h['proxima_predecible']}"
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def one_request(url: str, timeout: float, corrida: str = "") -> tuple[float, int]:
     """Devuelve (latencia_ms, status). status 0 si ni siquiera hubo respuesta HTTP."""
-    request = urllib.request.Request(url, method="GET")
+    cabeceras = {"X-Corrida": corrida, "User-Agent": f"smoke_load/{corrida}"} if corrida else {}
+    request = urllib.request.Request(url, method="GET", headers=cabeceras)
     start = time.perf_counter()
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -73,25 +126,34 @@ def one_request(url: str, timeout: float) -> tuple[float, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Carga y latencia contra la API del TP Premier ML.")
-    parser.add_argument("--url", default=os.environ.get("SERVICE_URL") or DEFAULT_URL,
-                        help="Base URL del servicio (default: $SERVICE_URL si existe, "
-                             "si no la URL fija del script).")
-    parser.add_argument("--endpoint", default=DEFAULT_ENDPOINT, help="Ruta a golpear.")
+    parser.add_argument("--url", help="Base URL del servicio (default: $SERVICE_URL, "
+                                      "o la de gcloud para el proyecto activo).")
+    parser.add_argument("--endpoint", help="Ruta a golpear (default: la próxima fecha "
+                                           "predecible, según /health).")
     parser.add_argument("--n", type=int, default=10, help="Cantidad de requests.")
     parser.add_argument("--concurrency", type=int, default=1, help="Requests en paralelo.")
     parser.add_argument("--timeout", type=float, default=120.0,
                         help="Segundos de espera por request (el cold start puede ser largo).")
+    parser.add_argument("--corrida", help="Id de la corrida (default: smoke-<timestamp UTC>).")
     args = parser.parse_args()
 
-    target = args.url.rstrip("/") + args.endpoint
+    base, origen = resolver_url(args.url)
+    base = base.rstrip("/")
+    endpoint = args.endpoint or proxima_fecha(base, args.timeout) or "/health"
+    corrida = args.corrida or "smoke-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    target = base + endpoint
 
-    print(f"Disparando {args.n} requests GET a {target} (concurrencia {args.concurrency})...")
+    print(f"Servicio : {base}   (de {origen})")
+    print(f"Corrida  : {corrida}")
+    print(f"Disparando {args.n} requests GET a {endpoint} (concurrencia {args.concurrency})...")
+    desde = datetime.now(timezone.utc)
     wall_start = time.perf_counter()
     if args.concurrency > 1:
         with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-            results = list(pool.map(lambda _: one_request(target, args.timeout), range(args.n)))
+            results = list(pool.map(lambda _: one_request(target, args.timeout, corrida),
+                                    range(args.n)))
     else:
-        results = [one_request(target, args.timeout) for _ in range(args.n)]
+        results = [one_request(target, args.timeout, corrida) for _ in range(args.n)]
     wall_s = time.perf_counter() - wall_start
 
     latencies = [latency for latency, _ in results]
@@ -104,7 +166,7 @@ def main() -> None:
     print(f"  ok (2xx)   : {ok}")
     print(f"  errores    : {errors}")
     print(f"  throughput : {len(results) / wall_s:.1f} req/s  ({wall_s:.2f}s total)")
-    print("  latencia (ms):")
+    print("  latencia CLIENTE (ms):")
     print(f"    min  : {min(latencies):8.1f}")
     print(f"    p50  : {statistics.median(latencies):8.1f}")
     print(f"    p95  : {percentile(latencies, 95):8.1f}")
@@ -113,6 +175,18 @@ def main() -> None:
     if errors:
         codes = sorted({s for s in statuses if not (200 <= s < 300)})
         print(f"  codigos de error: {codes}")
+
+    SALIDA.mkdir(parents=True, exist_ok=True)
+    archivo = SALIDA / f"{corrida}.json"
+    archivo.write_text(json.dumps({
+        "corrida": corrida, "url": base, "endpoint": endpoint, "desde": desde.isoformat(),
+        "n": len(results), "concurrency": args.concurrency,
+        "latencias_ms": [round(x, 2) for x in latencies], "status": statuses,
+    }, indent=1), encoding="utf-8")
+
+    print(f"\n  detalle    : {archivo}")
+    print("\nLa misma corrida vista desde el SERVIDOR (esperar ~30 s a que llegue a Cloud Logging):")
+    print(f"  python scripts/logs_servidor.py --corrida {corrida}")
 
 
 if __name__ == "__main__":

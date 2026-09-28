@@ -1,0 +1,33 @@
+# Métrica basada en logs: la latencia de la app, por estado de la fecha.
+#
+#   gcloud logging metrics create premier_prediccion_latencia \
+#     --config-from-file=gcp/metricas/prediccion_latencia.yaml
+#
+# Aparece en Monitoring -> Metrics Explorer como
+#   logging.googleapis.com/user/premier_prediccion_latencia
+# y se grafica con percentiles (p50/p95/p99) agrupando por `estado`. Sólo cuenta desde que
+# la métrica existe: no es retroactiva.
+filter: >-
+  resource.type="cloud_run_revision"
+  AND resource.labels.service_name="premier-ml-api"
+  AND jsonPayload.evento="prediccion"
+description: "Latencia de /predict medida en la app (jsonPayload.latencia_ms), por estado de la fecha"
+metricDescriptor:
+  metricKind: DELTA
+  valueType: DISTRIBUTION
+  unit: ms
+  labels:
+    - key: estado
+      valueType: STRING
+      description: "proxima (corre el modelo) o jugada/en_curso (sale del registro)"
+    - key: model_version
+      valueType: STRING
+valueExtractor: EXTRACT(jsonPayload.latencia_ms)
+labelExtractors:
+  estado: EXTRACT(jsonPayload.estado)
+  model_version: EXTRACT(jsonPayload.model_version)
+bucketOptions:
+  exponentialBuckets:
+    numFiniteBuckets: 40
+    growthFactor: 1.3
+    scale: 1

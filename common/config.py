@@ -60,7 +60,10 @@ class Config:
 
     @property
     def current_season(self) -> str:
-        return self.raw["seasons"]["current"]
+        # `TP_SEASON` deja que el cambio de temporada sea una variable de la revisión de
+        # Cloud Run y no un rebuild: la revisión vieja sigue apuntando a la temporada
+        # vieja, y volver atrás es mover el tráfico. Ver gcp/ROLLBACK.md.
+        return os.getenv("TP_SEASON") or self.raw["seasons"]["current"]
 
     @property
     def train_from(self) -> str:

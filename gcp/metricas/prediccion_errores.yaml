@@ -1,0 +1,25 @@
+# Métrica basada en logs: cuántos /predict fallaron, por status y tipo de error.
+#
+#   gcloud logging metrics create premier_prediccion_errores \
+#     --config-from-file=gcp/metricas/prediccion_errores.yaml
+#
+# En Metrics Explorer: logging.googleapis.com/user/premier_prediccion_errores, agrupado
+# por `status`. Los 4xx son de quien pidió (una fecha que no existe); los 5xx son nuestros
+# y son los que justifican un rollback.
+filter: >-
+  resource.type="cloud_run_revision"
+  AND resource.labels.service_name="premier-ml-api"
+  AND jsonPayload.evento="prediccion_error"
+description: "Requests a /predict que fallaron, por status y tipo de error"
+metricDescriptor:
+  metricKind: DELTA
+  valueType: INT64
+  unit: "1"
+  labels:
+    - key: status
+      valueType: STRING
+    - key: error_type
+      valueType: STRING
+labelExtractors:
+  status: EXTRACT(jsonPayload.status)
+  error_type: EXTRACT(jsonPayload.error_type)

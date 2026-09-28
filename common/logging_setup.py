@@ -19,13 +19,34 @@ dejar la regla escrita: el día que el caso tenga PII, el lugar donde se decide 
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
 import sys
+import urllib.request
 from datetime import datetime, timezone
 
 _CONFIGURED = False
+
+# El request que se está atendiendo, para que TODA línea que se loguee mientras dura
+# lleve con qué request va. Lo pone el middleware de `serving/main.py`; fuera de un
+# request (el Job, un test) queda vacío y el formatter no agrega nada.
+#
+#   trace    -> `logging.googleapis.com/trace`: Cloud Logging agrupa bajo la línea del
+#               request (la de `run.googleapis.com/requests`, con status y latencia del
+#               borde) todas las de la app. Sin él, son tres entradas sueltas que sólo se
+#               asocian por timestamp.
+#   corrida  -> el id que manda `scripts/smoke_load.py` en `X-Corrida`. Es lo que permite
+#               poner lado a lado la latencia medida en el cliente y la medida en el
+#               servidor PARA LOS MISMOS requests.
+_REQUEST: contextvars.ContextVar[dict | None] = contextvars.ContextVar("_REQUEST", default=None)
+
+# `trace` necesita el proyecto ("projects/P/traces/T"). Cloud Run no define
+# GOOGLE_CLOUD_PROJECT, así que si no vino por variable se le pregunta una vez al
+# metadata server, que sólo existe adentro de GCP.
+_PROYECTO: list[str | None] = []
+_METADATA = "http://metadata.google.internal/computeMetadata/v1/project/project-id"
 
 # Cloud Run mapea `severity` a su propio nivel; con "INFO"/"ERROR" alcanza.
 _SEVERIDAD = {"WARNING": "WARNING", "ERROR": "ERROR", "CRITICAL": "CRITICAL",
@@ -58,6 +79,12 @@ class FormatoJSON(logging.Formatter):
         for k, v in record.__dict__.items():
             if k not in _ESTANDAR and not k.startswith("_"):
                 salida[k] = v
+        req = _REQUEST.get()
+        if req:
+            if req.get("trace"):
+                salida["logging.googleapis.com/trace"] = req["trace"]
+            if req.get("corrida"):
+                salida.setdefault("corrida", req["corrida"])
         if record.exc_info:
             salida["exception"] = self.formatException(record.exc_info)
         return json.dumps(salida, default=str, ensure_ascii=False)
@@ -104,6 +131,51 @@ def setup(level: str | None = None, fmt: str | None = None) -> None:
     # urllib3 loguea cada reintento en DEBUG; a INFO ya es ruido.
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     _CONFIGURED = True
+
+
+def proyecto_gcp() -> str | None:
+    """El Project ID, para armar el `trace`. Se resuelve una vez por proceso."""
+    if not _PROYECTO:
+        p = os.getenv("TP_GCP_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT")
+        if not p and en_cloud_run():
+            try:
+                pedido = urllib.request.Request(_METADATA, headers={"Metadata-Flavor": "Google"})
+                with urllib.request.urlopen(pedido, timeout=1) as r:
+                    p = r.read().decode().strip() or None
+            except Exception:  # noqa: BLE001 — sin proyecto, sin trace; el log sigue
+                p = None
+        _PROYECTO.append(p)
+    return _PROYECTO[0]
+
+
+def trace_de(cabeceras: dict[str, str]) -> str | None:
+    """`projects/P/traces/T` a partir de las cabeceras que agrega Cloud Run.
+
+    `X-Cloud-Trace-Context: TRACE/SPAN;o=1` es la de siempre; `traceparent`
+    (`00-TRACE-SPAN-01`, W3C) es la que la reemplaza. Se acepta cualquiera.
+    """
+    trace_id = None
+    xctc = cabeceras.get("x-cloud-trace-context")
+    if xctc:
+        trace_id = xctc.split("/", 1)[0].strip() or None
+    elif cabeceras.get("traceparent"):
+        partes = cabeceras["traceparent"].split("-")
+        trace_id = partes[1] if len(partes) >= 3 else None
+    proyecto = proyecto_gcp()
+    if not trace_id or not proyecto:
+        return None
+    return f"projects/{proyecto}/traces/{trace_id}"
+
+
+def abrir_request(trace: str | None, corrida: str | None) -> contextvars.Token:
+    """Marca el request en curso. Devuelve el token para `cerrar_request`."""
+    # La corrida viene de afuera: se recorta para que nadie meta un párrafo en cada línea.
+    corrida = (corrida or "").strip()[:64] or None
+    return _REQUEST.set({"trace": trace, "corrida": corrida})
+
+
+def cerrar_request(token: contextvars.Token) -> None:
+    _REQUEST.reset(token)
 
 
 def reset() -> None:

@@ -44,4 +44,10 @@ COPY config.yaml .
 # El servicio. El Job del pipeline usa esta misma imagen con otro comando:
 #   gcloud run jobs create premier-ml-pipeline --image ... \
 #     --command python --args -m,pipeline.pre_deadline
-CMD ["sh", "-c", "uvicorn serving.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+#
+# `--no-access-log`: la línea de acceso de uvicorn ("GET /predict/... 200 OK") llegaba a
+# Cloud Logging como `textPayload` y repetía lo que Cloud Run ya escribe en
+# `run.googleapis.com/requests` —con más datos: latencia del borde, IP, user agent—.
+# Cada request dejaba tres entradas y parecía que el logging duplicaba. Quedan dos: la
+# del request (Cloud Run) y el evento de la app (`jsonPayload.evento`), unidas por `trace`.
+CMD ["sh", "-c", "uvicorn serving.main:app --host 0.0.0.0 --port ${PORT:-8080} --no-access-log"]

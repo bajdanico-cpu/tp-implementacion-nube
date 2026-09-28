@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -121,6 +122,11 @@ def cargar_modelo(nombre: str | None = None, version: str | None = None):
     la predicción tiene que promediar las mismas.
     """
     nombre = nombre or CFG.modelo
+    # `TP_MODEL_VERSION` fija el modelo EN LA REVISIÓN de Cloud Run. Sin ella, todas las
+    # revisiones leen el mismo `PRODUCTION.json` del bucket, y un rollback por tráfico
+    # vuelve atrás el código pero deja el modelo nuevo. Con ella, cada revisión carga lo
+    # que tenía cuando se desplegó. Ver gcp/ROLLBACK.md.
+    version = version or os.getenv("TP_MODEL_VERSION") or None
     if version:
         ruta = registry.RAIZ / nombre / version
     else:

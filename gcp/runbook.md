@@ -82,18 +82,28 @@ Dispara N requests GET y reporta throughput y latencia (p50/p95/p99). Sólo usa 
 librería estándar, así que corre en Cloud Shell sin instalar nada. El `max` suele ser el
 cold start de Cloud Run.
 
-La URL base sale, por prioridad, de `--url`, de `SERVICE_URL`, o de la constante del script.
-
-```powershell
-$env:SERVICE_URL = "https://premier-ml-api-tz75rnogkq-uc.a.run.app"
-```
+La URL base sale, por prioridad, de `--url`, de `SERVICE_URL`, o de `gcloud run services
+describe` sobre el proyecto activo. **No hay URL fija**: antes la había, era el servicio de
+otro proyecto, y el tráfico del smoke nunca llegaba a los logs propios.
 
 ```bash
-python scripts/smoke_load.py                            # 10 requests a /predict/2026-27/4
+export SERVICE_URL="$(gcloud run services describe "${SERVICE}" --region "${REGION}" --format='value(status.url)')"
+
+python scripts/smoke_load.py                            # 10 requests a la próxima fecha
 python scripts/smoke_load.py --n 20 --concurrency 4
-python scripts/smoke_load.py --endpoint /predict/2026-27/5   # la proxima: corre el modelo
+python scripts/smoke_load.py --endpoint /predict/2026-27/4   # una jugada: sale del registro
 python scripts/smoke_load.py --url http://127.0.0.1:8080     # contra la API local
 ```
+
+Cada corrida manda un id (`X-Corrida`) que el servicio copia en sus logs. Al final imprime
+el comando para ver **esa misma corrida desde el servidor**:
+
+```bash
+python scripts/logs_servidor.py --corrida smoke-20260928T213000Z
+```
+
+Cliente contra servidor, métricas basadas en logs y la consola: [`OBSERVABILIDAD.md`](OBSERVABILIDAD.md).
+Rollback: [`ROLLBACK.md`](ROLLBACK.md).
 
 > Conviene medir las dos rutas por separado: una fecha **jugada** sale del registro
 > congelado y no toca el modelo; la **próxima** sí lo corre. Son dos latencias distintas y

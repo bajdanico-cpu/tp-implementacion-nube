@@ -33,6 +33,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from common import logging_setup
 from common.config import CFG
 from common.logging_setup import get_logger
 from serving import observability as obs
@@ -105,6 +106,23 @@ app = FastAPI(
     description="Predicción 1X2 de la Premier League, servida desde la tabla Gold.",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def _marcar_request(request: Request, call_next):
+    """Cada línea que se loguee durante el request sale con su `trace` y su `corrida`.
+
+    Así, en el Explorador de registros, el evento `prediccion` queda anidado bajo la
+    línea del request que escribe Cloud Run (status, latencia del borde, IP), en vez de
+    ser una entrada suelta que sólo se asocia por el timestamp. Ver `logging_setup`.
+    """
+    token = logging_setup.abrir_request(
+        logging_setup.trace_de({k.lower(): v for k, v in request.headers.items()}),
+        request.headers.get("x-corrida"))
+    try:
+        return await call_next(request)
+    finally:
+        logging_setup.cerrar_request(token)
 
 
 @app.exception_handler(FechaNoPreparada)

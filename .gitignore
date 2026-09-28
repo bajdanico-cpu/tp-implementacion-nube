@@ -1,6 +1,8 @@
 # Datos — nunca al repo (se regeneran con `python -m ingestion.run`)
 data/
 eda/output/
+# El detalle de cada corrida de scripts/smoke_load.py (lo lee scripts/logs_servidor.py)
+monitoring/output/smoke/
 
 # Entorno
 .venv/
