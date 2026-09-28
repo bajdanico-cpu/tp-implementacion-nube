@@ -157,20 +157,38 @@ borra nada**, restaurar archiva lo que reemplaza.
 
 **4a. Volver Gold a la GW5** (Cloud Shell, en `~/tp-premier-ml`)
 
+Requiere el arreglo del 28/09 (`common/storage.py`): antes, `common.versiones` escribía el
+histórico en el bucket pero lo buscaba en el disco de Cloud Shell, y decía "No hay versiones
+archivadas" aunque existieran. Con el código al día (`git pull`) funciona.
+
 ```bash
+git pull
 pip install -q -r requirements-cloud.txt          # sólo si falta pandas / google-cloud-storage
 export TP_STORAGE_BACKEND=gcs TP_GCS_BUCKET=tp-mlops-premier-2026-bucket
 
 python -m common.versiones --diff gold_tp_match   # historia de Gold EN EL BUCKET
 ```
 
-La tabla lista las versiones **archivadas**, de la más vieja (arriba) a la más nueva
-(abajo); la vigente, la de 1580 filas que escribió el Job con la GW6 próxima, no aparece.
-Buscar la **última fila con 1570 filas**: es el Gold con la GW5 próxima. Copiar su `stamp`.
+**Cómo elegir la versión.** La tabla lista las versiones archivadas por `stamp`. **Ojo:
+después de las de 1570 filas vienen otras de 1580**, que ya tienen la GW6. Hay que tomar la
+**última de 1570 que aparece antes de la primera de 1580**. En nuestro bucket:
+
+```
+gold_tp_match 20260921T184956Z   1570   <- ESTA: la GW5 es la próxima
+gold_tp_match 20260921T185343Z   1580   <- ya tiene la GW6 (NO)
+gold_tp_match 20260922T221824Z   1580   <- ya tiene la GW6 (NO)
+```
+
+Se confirma en Silver: `fact_match` pasa de 1560 a 1570 partidos entre `20260921T184821Z` y
+`20260921T185224Z`. Ahí entraron los resultados de la GW5, y el Gold siguiente sumó la GW6.
 
 ```bash
-python -m common.versiones --restaurar gold_tp_match <STAMP_CON_1570_FILAS>
+python -m common.versiones --restaurar gold_tp_match 20260921T184956Z
 ```
+
+Tiene que decir `RESTAURADO gold.gold_tp_match <- 20260921T184956Z (1570 filas…)`. Si se
+restaura una equivocada no pasa nada: el histórico conserva todas, se vuelve a restaurar la
+correcta.
 
 El servicio relee Gold cada 5 minutos. Verificar:
 
