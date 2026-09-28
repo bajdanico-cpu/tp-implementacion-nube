@@ -439,15 +439,17 @@ def _forma_parquet(data: bytes) -> tuple[int | None, int | None]:
 
 
 def versiones(layer: str, name: str) -> list[dict[str, Any]]:
-    """Los manifiestos de las versiones archivadas de una tabla, de vieja a nueva."""
-    carpeta = versiones_root(layer, name)
-    if not carpeta.exists():
-        return []
+    """Los manifiestos de las versiones archivadas de una tabla, de vieja a nueva.
+
+    Lee por el backend, igual que `archivar` escribe. Con `pathlib` directo —como estaba—
+    en GCS miraba el disco de la máquina y no el bucket: `--diff` y `--restaurar` decían
+    "no hay versiones" aunque el Job las hubiera archivado todas.
+    """
     out = []
-    for m in sorted(carpeta.glob("*.json")):
+    for m in backend().list_files(versiones_root(layer, name), "*.json"):
         try:
-            out.append(json.loads(m.read_text(encoding="utf-8")))
-        except (OSError, json.JSONDecodeError):
+            out.append(json.loads(backend().read_bytes(m).decode("utf-8")))
+        except (OSError, ValueError):
             log.warning("manifiesto ilegible: %s", m)
     return out
 

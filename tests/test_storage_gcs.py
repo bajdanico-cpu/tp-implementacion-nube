@@ -294,3 +294,28 @@ def test_promover_y_leer_la_produccion_contra_un_backend_falso(falso):
     registry.promover(v, "prueba")
     leida = registry.produccion("falso")
     assert leida is not None and leida.version == v.version
+
+
+def test_el_historico_de_gold_se_lee_del_backend_y_se_restaura(falso):
+    """`versiones()` miraba el disco con `pathlib` mientras `archivar` escribía en el bucket.
+
+    En Cloud Shell, con GCS, `--diff` decía "no hay versiones" aunque el Job las hubiera
+    archivado todas, y el rollback de datos quedaba inutilizable. Pasó el 28/09/2026,
+    queriendo volver Gold a la GW5 para grabar la demo.
+    """
+    from common import versiones as cv
+
+    tabla = "tabla_versionada_de_prueba"          # un nombre que no existe en el disco
+    v1 = pd.DataFrame({"gw": [1, 2]})
+    v2 = pd.DataFrame({"gw": [1, 2, 3]})
+    storage.write_table(v1, tabla, layer="gold")
+    storage.write_table(v2, tabla, layer="gold")   # archiva v1 antes de pisarla
+
+    (archivada,) = storage.versiones("gold", tabla)
+    assert archivada["filas"] == 2
+    assert tabla in {p.name for p in falso.list_dirs(storage.versiones_root("gold"))}
+
+    cv.restaurar("gold", tabla, archivada["stamp"])
+    pd.testing.assert_frame_equal(storage.read_table(tabla, layer="gold"), v1)
+    # Restaurar también archiva lo que reemplaza: ahora v2 está en el histórico.
+    assert sorted(v["filas"] for v in storage.versiones("gold", tabla)) == [2, 3]

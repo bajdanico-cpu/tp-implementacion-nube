@@ -148,7 +148,88 @@ fuente caída, cambio de temporada) están en `gcp/ROLLBACK.md`.
 
 ---
 
-## 4. Si algo falla
+## 4. Grabar el video: de la GW5 a la GW6, con sus logs
+
+El estado de hoy ya tiene la GW6 predicha (el Job corrió el 22/09). Para grabar la
+transición hay que volver el **Gold del bucket** a la versión anterior, donde la GW5 es la
+próxima. Es el escenario C de `gcp/ROLLBACK.md` (rollback de datos) hecho en vivo: **no se
+borra nada**, restaurar archiva lo que reemplaza.
+
+**4a. Volver Gold a la GW5** (Cloud Shell, en `~/tp-premier-ml`)
+
+```bash
+pip install -q -r requirements-cloud.txt          # sólo si falta pandas / google-cloud-storage
+export TP_STORAGE_BACKEND=gcs TP_GCS_BUCKET=tp-mlops-premier-2026-bucket
+
+python -m common.versiones --diff gold_tp_match   # historia de Gold EN EL BUCKET
+```
+
+La tabla lista las versiones **archivadas**, de la más vieja (arriba) a la más nueva
+(abajo); la vigente, la de 1580 filas que escribió el Job con la GW6 próxima, no aparece.
+Buscar la **última fila con 1570 filas**: es el Gold con la GW5 próxima. Copiar su `stamp`.
+
+```bash
+python -m common.versiones --restaurar gold_tp_match <STAMP_CON_1570_FILAS>
+```
+
+El servicio relee Gold cada 5 minutos. Verificar:
+
+```bash
+curl -s $SERVICE_URL/health | python3 -m json.tool   # proxima_predecible: 5, gold_filas: 1570
+curl -s $SERVICE_URL/actualizar | python3 -m json.tool # hace_falta: true
+```
+
+Si en 5 minutos sigue en 6: `gcloud run services update $SERVICE --region $REGION
+--update-env-vars TP_RESET_AT=$(date +%s)` (crea una revisión nueva con el mismo código y
+fuerza la relectura).
+
+> Si `--diff` no muestra ninguna versión de 1570 filas, **no improvisar**: la PC de Nico
+> tiene esa versión (`20260920T224839Z` en `data/_versiones/`) y se sube de ahí.
+
+**4b. Grabar**
+
+1. Abrir `$SERVICE_URL`. La GW5 predicha; la GW6 en adelante, en gris.
+2. El panel "Estado del dato" dice que conviene actualizar.
+3. Apretar **"Actualizar datos"** (pide el token la primera vez; ver abajo cómo leerlo).
+4. Mientras corre (varios minutos), mostrar la ejecución: consola → **Cloud Run → Jobs →
+   premier-ml-pipeline → Ejecuciones** → la que está en curso → **Registros**. Se ven los
+   pasos: `bronze_fpl`, `bronze_vaastav`, `bronze_fd`, `bronze_opta`, `silver`,
+   `competencias`, `opta`, `gold`, `predecir`.
+5. Al terminar, la página se recarga sola: la GW5 con resultado, la GW6 predicha.
+
+El token del botón, si lo pide:
+
+```bash
+gcloud run services describe $SERVICE --region $REGION --format=json \
+  | python3 -c "import json,sys; e=json.load(sys.stdin)['spec']['template']['spec']['containers'][0].get('env',[]); print({x['name']:x.get('value') for x in e}.get('TP_ADMIN_TOKEN'))"
+```
+
+**4c. La evidencia en logs** (al terminar; quedan en archivos para el informe)
+
+```bash
+# El servicio: quién pidió actualizar y cómo terminó
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="premier-ml-api"
+  AND (jsonPayload.evento="pipeline_disparo" OR jsonPayload.evento="pipeline_fin")' --freshness=3h \
+  --format='table(timestamp, jsonPayload.evento, jsonPayload.tarea, jsonPayload.estado, jsonPayload.segundos)' \
+  | tee evidencia_disparo.txt
+
+# El Job: paso por paso
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="premier-ml-pipeline"' \
+  --freshness=3h --limit=200 --order=asc --format='table(timestamp, severity, jsonPayload.message)' \
+  | tee evidencia_job.txt
+
+# La ejecución, con su duración y resultado
+gcloud run jobs executions list --job premier-ml-pipeline --region $REGION | tee evidencia_ejecuciones.txt
+
+# Y la GW6 servida después
+python scripts/smoke_load.py --n 10       # y el logs_servidor.py --corrida que imprime
+```
+
+Después del video, el estado queda igual que hoy: GW6 próxima. No hay que deshacer nada.
+
+---
+
+## 5. Si algo falla
 
 **Plan B — segundos, sin tocar git.** El servicio vuelve a la revisión de hoy:
 

@@ -50,11 +50,9 @@ CAPAS = {"silver": lambda: CFG.silver_root, "gold": lambda: CFG.gold_root}
 
 def vivas(layer: str) -> list:
     """Los archivos que están vigentes en una capa (parquet y json sueltos)."""
-    root = CAPAS[layer]()
-    if not root.exists():
-        return []
-    return sorted(p for p in root.iterdir()
-                  if p.is_file() and p.suffix in (".parquet", ".json"))
+    # Por el backend: con `pathlib` directo, en GCS esto listaba el disco y no el bucket.
+    return [p for p in backend().list_files(CAPAS[layer]())
+            if p.suffix in (".parquet", ".json")]
 
 
 def inventario() -> pd.DataFrame:
@@ -64,11 +62,9 @@ def inventario() -> pd.DataFrame:
         for p in vivas(layer):
             filas.append({"layer": layer, "tabla": p.stem, "stamp": "VIGENTE",
                           "filas": None, "columnas": None,
-                          "MB": round(p.stat().st_size / 1e6, 2), "etiqueta": ""})
-        raiz = versiones_root(layer)
-        if not raiz.exists():
-            continue
-        for carpeta in sorted(raiz.iterdir()):
+                          "MB": round(p.stat().st_size / 1e6, 2) if p.exists() else None,
+                          "etiqueta": ""})
+        for carpeta in backend().list_dirs(versiones_root(layer)):
             for v in versiones(layer, carpeta.name):
                 filas.append({"layer": layer, "tabla": v["tabla"], "stamp": v["stamp"],
                               "filas": v.get("filas"), "columnas": v.get("columnas"),
