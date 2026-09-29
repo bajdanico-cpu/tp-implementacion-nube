@@ -226,6 +226,92 @@ def test_resumen_de_la_corrida_marca_el_paso_que_fallo():
 
 
 # ---------------------------------------------------------------------------
+# El botón no puede quedar girando si Cloud Run no deja consultar la operación
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def tarea_en_vuelo(monkeypatch, tmp_path):
+    """Una tarea lanzada al Job, con Cloud Run contestando 403 a la consulta (29/09/2026)."""
+    import requests
+
+    from common import storage
+    from serving import tareas
+
+    monkeypatch.setenv("TP_DATA_ROOT", str(tmp_path))
+    storage.set_backend(storage.LocalBackend())
+    monkeypatch.setattr(tareas, "_token_metadata", lambda: "token")
+
+    class Respuesta403:
+        status_code = 403
+        text = '{"error": {"code": 403, "message": "Permission denied"}}'
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: Respuesta403())
+    t = tareas.Tarea(id="20260929T021735Z-1505dd", estado="corriendo", motivo="prueba",
+                     destino="cloud-run-job",
+                     referencia="projects/p/locations/us-central1/operations/f7be")
+    yield t, tmp_path / "pipeline" / "runs"
+    storage.reset_backend()
+
+
+def test_con_403_la_tarea_cierra_por_el_diario_del_bucket(tarea_en_vuelo):
+    from serving import tareas
+
+    t, runs = tarea_en_vuelo
+    runs.mkdir(parents=True)
+    (runs / "20260920T100000Z.json").write_text(json.dumps({"corrida": "viejo", "ok": False}))
+    (runs / "20260929T022043Z.json").write_text(json.dumps({
+        "corrida": "20260929T022043Z", "ok": True,
+        "pasos": [{"paso": "gold", "estado": "ok", "segundos": 55.1}]}))
+
+    capturados = []
+
+    class Espia(logging.Handler):
+        def emit(self, record):
+            if getattr(record, "evento", None) == "pipeline_fin":
+                capturados.append(record)
+
+    h = Espia()
+    tareas.log.addHandler(h)
+    try:
+        tareas._refrescar(t)
+    finally:
+        tareas.log.removeHandler(h)
+
+    assert t.estado == "ok" and t.terminada_at is not None
+    assert "20260929T022043Z" in t.detalle
+    # El cierre queda en el log igual que si hubiera contestado Cloud Run, con su fuente.
+    (fin,) = capturados
+    assert fin.estado == "ok" and fin.fuente == "diario" and fin.tarea == t.id
+
+
+def test_con_403_y_sin_diario_nuevo_sigue_esperando(tarea_en_vuelo):
+    """Un diario de ANTES del disparo es de otra corrida: no puede cerrar esta."""
+    from serving import tareas
+
+    t, runs = tarea_en_vuelo
+    runs.mkdir(parents=True)
+    (runs / "20260920T100000Z.json").write_text(json.dumps({"corrida": "viejo", "ok": True}))
+
+    tareas._refrescar(t)
+
+    assert t.estado == "corriendo" and t.terminada_at is None
+
+
+def test_el_diario_de_una_corrida_fallida_cierra_en_error(tarea_en_vuelo):
+    from serving import tareas
+
+    t, runs = tarea_en_vuelo
+    runs.mkdir(parents=True)
+    (runs / "20260929T022043Z.json").write_text(json.dumps({
+        "corrida": "20260929T022043Z", "ok": False,
+        "pasos": [{"paso": "bronze_opta", "estado": "error", "error": "HTTPError: 503"}]}))
+
+    tareas._refrescar(t)
+
+    assert t.estado == "error" and "bronze_opta" in t.detalle
+
+
+# ---------------------------------------------------------------------------
 # Rollback: lo que una revisión puede fijar
 # ---------------------------------------------------------------------------
 

@@ -251,35 +251,71 @@ def _refrescar(t: Tarea) -> Tarea:
             headers={"Authorization": f"Bearer {_token_metadata()}"},
             timeout=TIMEOUT_ADMIN_S)
         if r.status_code >= 300:
-            log.warning("Cloud Run devolvió %s al consultar %s", r.status_code, t.referencia)
-            return t
+            log.warning("Cloud Run devolvió %s al consultar %s: %s",
+                        r.status_code, t.referencia, r.text[:200])
+            return _cerrar_por_diario(t)
         op = r.json()
     except Exception as exc:  # noqa: BLE001 — una consulta que falla no mata la tarea
         log.warning("No se pudo consultar la corrida %s: %s", t.referencia, exc)
-        return t
+        return _cerrar_por_diario(t)
 
     if not op.get("done"):
         return t
 
-    t.terminada_at = ahora
     if "error" in op:
-        t.estado = "error"
-        t.detalle = str(op["error"].get("message", op["error"]))[:400]
-    else:
-        # La ejecución terminó, pero "terminó" no es "salió bien": una tarea que
-        # devuelve exit(1) deja la operación `done` y sin `error`.
-        ejec = op.get("response", {})
-        fallidas = int(ejec.get("failedCount", 0) or 0)
-        ok = int(ejec.get("succeededCount", 0) or 0)
-        t.estado = "ok" if ok and not fallidas else "error"
-        t.detalle = (f"{ok} tarea(s) ok, {fallidas} fallida(s). "
-                     f"Logs: gcloud run jobs executions list "
-                     f"--job {os.getenv('TP_JOB_NAME', 'premier-ml-pipeline')}")
+        return _cerrar(t, "error", str(op["error"].get("message", op["error"]))[:400],
+                       fuente="cloud-run")
+    # La ejecución terminó, pero "terminó" no es "salió bien": una tarea que
+    # devuelve exit(1) deja la operación `done` y sin `error`.
+    ejec = op.get("response", {})
+    fallidas = int(ejec.get("failedCount", 0) or 0)
+    ok = int(ejec.get("succeededCount", 0) or 0)
+    return _cerrar(t, "ok" if ok and not fallidas else "error",
+                   f"{ok} tarea(s) ok, {fallidas} fallida(s). "
+                   f"Logs: gcloud run jobs executions list "
+                   f"--job {os.getenv('TP_JOB_NAME', 'premier-ml-pipeline')}",
+                   fuente="cloud-run")
 
+
+def _cerrar(t: Tarea, estado: str, detalle: str, fuente: str) -> Tarea:
+    t.terminada_at = time.time()
+    t.estado, t.detalle = estado, detalle
     evento(log, "pipeline_fin", f"tarea {t.id}: {t.estado}",
-           tarea=t.id, estado=t.estado, destino=t.destino,
+           tarea=t.id, estado=t.estado, destino=t.destino, fuente=fuente,
            segundos=round(t.terminada_at - t.lanzada_at, 1))
     return t
+
+
+def _cerrar_por_diario(t: Tarea) -> Tarea:
+    """Plan B cuando Cloud Run no deja consultar la operación: el diario de la corrida.
+
+    Pasó el 29/09/2026: la cuenta del servicio podía LANZAR el Job pero la consulta de la
+    operación devolvía 403. El Job terminaba bien y la página giraba 35 minutos. El
+    diario (`pipeline/runs/<corrida>.json`) lo escribe el Job al terminar, en el bucket que
+    el servicio ya lee: si hay uno de una corrida que arrancó después del disparo, la
+    corrida terminó, y el diario dice si salió bien.
+    """
+    from common.storage import backend
+
+    runs = CFG.data_root / "pipeline" / "runs"
+    lanzada = t.id.split("-")[0]              # el id empieza con el stamp del disparo
+    try:
+        posteriores = [p for p in backend().list_files(runs, "*.json") if p.stem >= lanzada]
+        if not posteriores:
+            return t
+        import json
+
+        diario = json.loads(backend().read_bytes(posteriores[-1]).decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001 — sin diario legible, se sigue esperando
+        log.warning("No se pudo leer el diario de la corrida: %s", exc)
+        return t
+
+    fallo = next((p for p in diario.get("pasos", []) if p.get("estado") == "error"), None)
+    detalle = (f"corrida {diario.get('corrida')}: "
+               + ("todos los pasos ok" if diario.get("ok")
+                  else f"falló {fallo.get('paso') if fallo else '?'}: "
+                       f"{(fallo or {}).get('error', '')[:200]}"))
+    return _cerrar(t, "ok" if diario.get("ok") else "error", detalle, fuente="diario")
 
 
 def en_curso() -> Tarea | None:

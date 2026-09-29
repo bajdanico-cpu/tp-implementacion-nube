@@ -228,11 +228,26 @@ gcloud run services update $SERVICE --region $REGION --remove-env-vars CLAVE
 | POST 403 desde la página | token mal guardado: F12 → Application → Local Storage → borrar `tp_admin_token` y reintentar con `echo $TOKEN` |
 | `TOKEN` vacío (botón apagado) | `gcloud run services update $SERVICE --region $REGION --update-env-vars TP_ADMIN_TOKEN=$(openssl rand -hex 16)` y repetir §0 |
 | POST 409 | ya hay una corrida: seguirla (§3) |
+| El contador sigue aunque el Job terminó | el servicio no puede consultar la operación (403, visto el 29/09). Confirmar: el resumen dice `ok=1` pero sin `FIN`. El dato ya está: F5. Arreglo: `roles/run.viewer` a la cuenta (§10), o la imagen con el plan B del diario |
 | El Job falla | `python scripts/resumen_actualizacion.py` dice en qué paso. El Gold anterior queda intacto |
 | El Job no termina a tiempo | video de respaldo, y seguir con §5 |
 | La web no cambia tras el Job | Ctrl+F5; `/health` dice la verdad |
 | `gcloud logging read` vacío | proyecto (`gcloud config get-value project`), `--freshness`, y que el tráfico haya ido a ESTE servicio |
 | Se perdieron las variables | repetir §0 |
+
+---
+
+## 10. Permisos de la cuenta del servicio
+
+```bash
+# Qué roles tiene la cuenta con la que corren el Service y el Job
+gcloud projects get-iam-policy tp-mlops-premier-2026 --flatten="bindings[].members" \
+  --filter="bindings.members:443531272820-compute@developer.gserviceaccount.com" --format="value(bindings.role)"
+
+# Que pueda consultar cómo va el Job que lanza (sin esto, el contador del botón no termina)
+gcloud projects add-iam-policy-binding tp-mlops-premier-2026 \
+  --member="serviceAccount:443531272820-compute@developer.gserviceaccount.com" --role="roles/run.viewer"
+```
 
 **Plan C** (volver a lo de antes de todo esto): `git checkout demo-estable`, rebuild de
 `:latest` y redeploy con `--remove-env-vars TP_MODEL_VERSION,TP_SEASON` (`GUIA-DEMO.md` §5).
