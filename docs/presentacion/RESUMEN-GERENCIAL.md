@@ -2,8 +2,8 @@
 
 Para repasar juntos antes de presentar. Qué construimos, cómo está armado, dónde está
 cada concepto de la materia, y qué contestar. El detalle técnico vive en:
-[`ARQUITECTURA-DEPLOY.md`](ARQUITECTURA-DEPLOY.md) · [`GUIA-DEMO.md`](GUIA-DEMO.md) ·
-[`gcp/OBSERVABILIDAD.md`](gcp/OBSERVABILIDAD.md) · [`gcp/ROLLBACK.md`](gcp/ROLLBACK.md).
+[`gcp/ARQUITECTURA-DEPLOY.md`](../../gcp/ARQUITECTURA-DEPLOY.md) · [`GUIA-DEMO.md`](GUIA-DEMO.md) ·
+[`gcp/OBSERVABILIDAD.md`](../../gcp/OBSERVABILIDAD.md) · [`gcp/ROLLBACK.md`](../../gcp/ROLLBACK.md).
 
 ---
 

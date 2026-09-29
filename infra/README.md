@@ -36,9 +36,10 @@ fecha, el modelo cuando se reentrena— al mismo artefacto de build, y obligaba 
 redesplegar para predecir una fecha nueva. Hoy se leen del bucket vía `GCSBackend`, y se
 configura con `TP_STORAGE_BACKEND=gcs` sin reconstruir nada.
 
-**Dos service accounts.** La API sólo tiene `objectViewer`; el Job tiene `objectAdmin`.
-Con una sola identidad todo andaría igual, y justamente por eso vale nombrarlo: un bug en
-el camino de lectura **no puede** corromper Gold, en vez de simplemente no deber hacerlo.
+**Una sola cuenta de servicio.** El Service y el Job corren con la cuenta de servicio por
+defecto del proyecto. `scripts/preparar_demo.sh` contempla separarlas —la API con
+`objectViewer`, el Job con `objectAdmin`— para que un bug en el camino de lectura no
+pueda corromper Gold, pero el despliegue en uso no aplica esa separación.
 
 ## Lo que queda
 

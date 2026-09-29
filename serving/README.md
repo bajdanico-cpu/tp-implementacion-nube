@@ -16,13 +16,16 @@ fila responde 409 diciendo cuál sí.
 
 ## Diseño
 
-**Cloud Run + FastAPI.** Modelo versionado en GCS (o en Vertex AI Model Registry si
-se quiere mostrar el servicio administrado).
+**Cloud Run + FastAPI.** Modelo versionado en el bucket de GCS, leído al arrancar.
 
 ```
-GET  /health                      → estado y versión del modelo cargado
-GET  /predict/{season}/{gameweek} → predicciones de esa fecha
-POST /predict                     → predicción ad-hoc con features explícitas
+GET  /                            → la página web (web/index.html)
+GET  /health                      → estado, modelo cargado y próxima fecha predecible
+GET  /calendario/{season}         → las 38 fechas y el estado de cada una
+GET  /predict/{season}/{gameweek} → predicciones de esa fecha (409 si todavía no está lista)
+GET  /actualizar                  → ¿hay resultados nuevos para incorporar?
+POST /actualizar                  → dispara el Cloud Run Job del pipeline (X-Admin-Token)
+GET  /actualizar/{tarea_id}       → estado de esa corrida
 ```
 
 Toda predicción servida se **registra** con su versión de modelo y su snapshot de

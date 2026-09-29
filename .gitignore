@@ -1,8 +1,9 @@
 # Datos — nunca al repo (se regeneran con `python -m ingestion.run`)
 data/
 eda/output/
-# El detalle de cada corrida de scripts/smoke_load.py (lo lee scripts/logs_servidor.py)
-monitoring/output/smoke/
+# Salidas del monitoreo (tablas por fecha y el detalle de cada corrida de
+# scripts/smoke_load.py): se regeneran, no van al repo
+monitoring/output/
 
 # Entorno
 .venv/

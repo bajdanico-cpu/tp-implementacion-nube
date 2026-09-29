@@ -10,7 +10,7 @@ momento del año —el **cambio de temporada**— en que cambian todas juntas.
 
 ## 1. Qué se puede volver atrás: tres artefactos, tres mecanismos
 
-El diseño separa tres ciclos de vida (ver [`ARQUITECTURA-DEPLOY.md`](../ARQUITECTURA-DEPLOY.md)),
+El diseño separa tres ciclos de vida (ver [`ARQUITECTURA-DEPLOY.md`](ARQUITECTURA-DEPLOY.md)),
 y cada uno tiene su propio mecanismo de vuelta atrás:
 
 | Artefacto | Dónde vive | Cómo se vuelve atrás | Tiempo |

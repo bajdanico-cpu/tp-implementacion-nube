@@ -1,6 +1,7 @@
 # Empezá acá
 
-Hay cuatro documentos en esta carpeta y tres scripts en `scripts/`. Éste dice cuál usar.
+Esta carpeta tiene las guías de despliegue y operación en GCP; los scripts están en `scripts/`.
+Éste dice cuál usar.
 
 ## Si lo que querés es dejar el TP andando en GCP
 
@@ -24,8 +25,7 @@ los permisos, la imagen, el Job, el servicio— y al final verifica que haya que
 Es idempotente: se puede correr dos veces.
 
 La explicación de **qué hace cada paso y por qué** está en
-[`GUIA-DEPLOY.md`](GUIA-DEPLOY.md). Conviene leerla antes de la defensa: las preguntas
-van a ser sobre eso y no sobre el script.
+[`GUIA-DEPLOY.md`](GUIA-DEPLOY.md).
 
 ---
 
@@ -74,8 +74,11 @@ En Cloud Shell: menú de tres puntos → **Subir** → elegí el zip. Después
 |---|---|---|
 | **[`GUIA-DEPLOY.md`](GUIA-DEPLOY.md)** | De cero a operado: los ocho pasos explicados, la evidencia de la clase 7, cómo revisar todo desde la consola web, costos y troubleshooting | **la principal** |
 | [`runbook.md`](runbook.md) | Comandos sueltos de terminal: correr el pipeline, leer logs por campo, smoke test de carga | cuando ya está desplegado |
+| [`ARQUITECTURA-DEPLOY.md`](ARQUITECTURA-DEPLOY.md) | Los componentes que arma `preparar_demo.sh`, uno por uno, y las variables de entorno | para entender el deploy |
+| [`OBSERVABILIDAD.md`](OBSERVABILIDAD.md) | Logs JSON, latencia cliente/servidor y métricas basadas en logs | operación |
+| [`ROLLBACK.md`](ROLLBACK.md) | Qué se vuelve atrás (código, modelo, dato) y cómo | operación |
 | [`paso-a-paso.md`](paso-a-paso.md) | El lab de la clase 4: el pipeline en Cloud Shell, sin desplegar nada | histórico |
-| [`../infra/README.md`](../infra/README.md) | La arquitectura y las tres decisiones que hay que poder defender | antes de la defensa |
+| [`../infra/README.md`](../infra/README.md) | Estado de cada recurso y las decisiones de arquitectura | referencia |
 
 ## Qué es cada script
 
@@ -86,14 +89,16 @@ En Cloud Shell: menú de tres puntos → **Subir** → elegí el zip. Después
 | `scripts/preparar_demo.sh --reset` | Vuelve el dato al estado inicial de la demo | sí |
 | `scripts/bundle_demo.py` | Arma el zip de 5 MB para subir a Cloud Shell | no |
 | `scripts/smoke_load.py` | Carga y latencia contra la API | no |
+| `scripts/logs_servidor.py` | La misma carga vista desde Cloud Logging | no |
+| `scripts/rollback.sh` | Lista revisiones y mueve el tráfico a otra | sí |
 
 ---
 
-## El día de la defensa
+## Verificación rápida
 
 ```bash
 curl -s $SERVICE_URL/health | python3 -m json.tool
 ```
 
-Tiene que decir `"status": "ok"` y `"proxima_predecible": 5`. El checklist completo está
+Tiene que decir `"status": "ok"` y la próxima fecha predecible. El checklist completo está
 al final de la sección 9 de [`GUIA-DEPLOY.md`](GUIA-DEPLOY.md).

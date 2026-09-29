@@ -2,6 +2,12 @@
 
 **Estado: implementado.** `python -m training.run --todos` entrena, evalúa y persiste.
 
+> **Modelo vigente:** `xgb_gbt` con 279 features (`v2.3189c9d4.279`). Sobre el holdout
+> 2025-26: accuracy 0,495, log-loss 1,030, RPS 0,208 (versión de evaluación
+> `20260920T170009Z`). En producción sirve `20260825T024144Z`, entrenada incluyendo 2025-26.
+> Este documento es el registro cronológico del trabajo: las tablas de las primeras
+> secciones corresponden a versiones anteriores del feature set (143 y 192 features).
+
 ```powershell
 python -m training.run --todos                             # los tres modelos
 python -m training.run --model xgb_gbt --device cpu        # forzar CPU
