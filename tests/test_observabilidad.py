@@ -189,6 +189,43 @@ def test_latencia_de_borde_mal_formada_no_rompe():
 
 
 # ---------------------------------------------------------------------------
+# resumen_actualizacion: del botón al Gold nuevo
+# ---------------------------------------------------------------------------
+
+def test_resumen_toma_el_ultimo_disparo_y_su_fin():
+    from scripts import resumen_actualizacion as ra
+
+    ev = [
+        {"timestamp": "2026-09-28T20:00:00Z", "jsonPayload": {"evento": "pipeline_disparo", "tarea": "A"}},
+        {"timestamp": "2026-09-28T22:00:00Z", "jsonPayload": {"evento": "pipeline_disparo", "tarea": "B"}},
+        {"timestamp": "2026-09-28T20:07:00Z", "jsonPayload": {"evento": "pipeline_fin", "tarea": "A"}},
+        {"timestamp": "2026-09-28T22:06:00Z", "jsonPayload": {"evento": "pipeline_fin", "tarea": "B",
+                                                              "estado": "ok"}},
+    ]
+    disparo, fin = ra.resumir_eventos(ev)
+    assert disparo["jsonPayload"]["tarea"] == "B"
+    assert fin["jsonPayload"]["tarea"] == "B"
+    assert ra.resumir_eventos([]) == (None, None)
+
+
+def test_resumen_de_la_corrida_marca_el_paso_que_fallo():
+    from scripts import resumen_actualizacion as ra
+
+    lineas = ra.resumir_corrida({
+        "corrida": "20260928T220000Z", "at": "2026-09-28T22:06:00+00:00", "ok": False,
+        "pasos": [
+            {"paso": "bronze_fpl", "estado": "ok", "segundos": 3.1, "salida": None},
+            {"paso": "gold", "estado": "ok", "segundos": 110.4,
+             "salida": {"filas": 1580, "columnas": 301}},
+            {"paso": "bronze_opta", "estado": "error", "segundos": 2.0,
+             "error": "HTTPError: 503 Service Unavailable"},
+        ]})
+    texto = "\n".join(lineas)
+    assert "FALLÓ" in texto and "1580 filas" in texto and "HTTPError: 503" in texto
+    assert lineas[-1].split()[-1] == "115.5"
+
+
+# ---------------------------------------------------------------------------
 # Rollback: lo que una revisión puede fijar
 # ---------------------------------------------------------------------------
 

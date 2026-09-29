@@ -139,12 +139,22 @@ El punto a decir: cada revisión **fija su modelo** (`TP_MODEL_VERSION`), así q
 rollback por tráfico vuelve atrás código y modelo juntos. Los otros escenarios (Gold malo,
 fuente caída, cambio de temporada) están en `gcp/ROLLBACK.md`.
 
-> Después del simulacro **no usar `--to-latest`**: la última revisión es la rota. El tráfico
-> queda donde lo dejó `rollback.sh`.
->
-> Si el simulacro no rompe nada (el `/health` sigue ok), el tráfico estaba fijado a una
-> revisión y la rota nació sin tráfico. Se arregla con
-> `gcloud run services update-traffic $SERVICE --region $REGION --to-latest` y se repite.
+**Después del simulacro, dejar la plantilla limpia (obligatorio).** El rollback mueve el
+tráfico pero **no** arregla la plantilla del servicio: `TP_MODEL_VERSION=no-existe` queda
+ahí, y cualquier `gcloud run services update` posterior (por ejemplo un `TP_RESET_AT`)
+crea **otra revisión rota**. Visto el 28/09: `00006`, `00007` y `00008`, las tres con
+`no-existe`.
+
+```bash
+gcloud run services update $SERVICE --region $REGION --update-env-vars TP_MODEL_VERSION=20260825T024144Z
+gcloud run services update-traffic $SERVICE --region $REGION --to-latest
+bash scripts/rollback.sh        # la última revisión, con 100 % y 20260825T024144Z
+```
+
+> **Antes de empezar el simulacro**, `bash scripts/rollback.sh` tiene que mostrar el 100 %
+> en la revisión **más nueva**. Si el tráfico está fijado a una revisión vieja, la rota
+> nace con 0 %, `/health` sigue ok y el simulacro no muestra nada. Se arregla con los dos
+> comandos de arriba.
 
 ---
 
